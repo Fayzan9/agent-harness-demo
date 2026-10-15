@@ -68,6 +68,12 @@ async def run(
         if session.ctx.memory and first_turn:
             yield Event("memory_loaded", data={"text": session.ctx.memory})
 
+        session.ctx.clock_first = "clock_in_prompt" in cfg.chaos
+        if session.ctx.clock_first:
+            yield Event(
+                "chaos",
+                data={"kind": "clock_in_prompt", "detail": "Putting the current time at the very top of the instructions, so the start of the prompt changes on every pass"},
+            )
         chaos = Chaos(cfg.chaos) if cfg.chaos else None
         pending = _pending_for_resume(session) if resume else None
         async for event in agent_loop(
@@ -130,10 +136,11 @@ async def agent_loop(
                 yield Event("error", step, {"message": str(e)})
                 return
 
-        yield Event("context_updated", step, {**ctx.usage(schemas, cfg.context_limit), "messages": ctx.as_messages()})
+        messages = ctx.as_messages()  # built once, so what the event shows is exactly what is sent
+        yield Event("context_updated", step, {**ctx.usage(schemas, cfg.context_limit), "messages": messages})
 
         reply = None
-        async for item in _call_model(cfg, ctx, schemas, step, chaos):
+        async for item in _call_model(cfg, messages, schemas, step, chaos):
             if isinstance(item, Reply):
                 reply = item
             else:
@@ -195,14 +202,14 @@ async def agent_loop(
     )
 
 
-async def _call_model(cfg: RunConfig, ctx: Context, schemas: list[dict], step: int, chaos: Chaos | None):
+async def _call_model(cfg: RunConfig, messages: list[dict], schemas: list[dict], step: int, chaos: Chaos | None):
     """One model call. Temporary failures are retried with a growing pause. Yields Events, then a Reply."""
     for attempt in range(1, MAX_MODEL_ATTEMPTS + 1):
         started = time.perf_counter()
         try:
             if chaos:
                 chaos.before_model_call(step)
-            resp = await llm.complete(cfg.model, ctx.as_messages(), schemas or None)
+            resp = await llm.complete(cfg.model, messages, schemas or None)
             yield Reply(resp.choices[0].message, time.perf_counter() - started, llm.usage_of(resp))
             return
         except (*llm.TRANSIENT, SimulatedRateLimit) as e:

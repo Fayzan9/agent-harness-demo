@@ -124,7 +124,7 @@ async def main():
     # 4. over HTTP
     client = TestClient(app)
     opts = client.get("/evals/options").json()
-    check("options list cases and setups", len(opts["cases"]) == 6 and len(opts["variants"]) == 6 and opts["cases"][0]["checks"][0]["kind"])
+    check("options list cases and setups", len(opts["cases"]) == 7 and len(opts["variants"]) == 7 and opts["cases"][0]["checks"][0]["kind"])
     with client.stream("POST", "/evals/run", json={"cases": ["read-file"], "variants": ["baseline", "no_hooks"], "runs": 2}) as resp_:
         body = "".join(resp_.iter_text())
     ev = [json.loads(x[6:]) for x in body.split("\n\n") if x.startswith("data: ")]

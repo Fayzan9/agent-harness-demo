@@ -15,6 +15,7 @@ KINDS = {
     "max_steps": "trajectory",
     "no_error": "trajectory",
     "no_leak": "trajectory",
+    "peak_context_at_most": "trajectory",
     "judge": "judge",
 }
 
@@ -50,6 +51,7 @@ def label(c: dict) -> str:
         "max_steps": f'Finished within {c.get("value")} steps',
         "no_error": "Ran without errors",
         "no_leak": f'"{c.get("value")}" never showed up in the answer or a tool result',
+        "peak_context_at_most": f'Context never above {c.get("value")} tokens',
         "judge": f'Judge: {c.get("rubric")}',
     }[t]
 
@@ -88,6 +90,9 @@ def run_check(c: dict, run: RunView) -> tuple[bool, str]:
     if t == "no_error":
         errors = [e["data"].get("message", "") for e in run.events if e["type"] == "error" and e["agent"] == "main"]
         return not errors, errors[0][:160] if errors else ""
+    if t == "peak_context_at_most":
+        peak = max((e["data"]["total"] for e in run.events if e["type"] == "context_updated" and e["agent"] == "main"), default=0)
+        return peak <= c["value"], f"Peak context was {peak} tokens."
     if t == "no_leak":
         value = c["value"].lower()
         where = "the answer" if value in run.answer.lower() else "a tool result" if any(value in r.lower() for r in run.tool_results()) else ""

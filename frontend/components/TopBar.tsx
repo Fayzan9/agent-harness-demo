@@ -51,7 +51,7 @@ export default function TopBar({ scenarios, scenarioId, onScenario, mode, onMode
               className="rounded-lg border border-line bg-panel px-3 py-1.5 text-sm font-medium outline-none focus:border-accent"
               aria-label="Scenario"
             >
-              {(["Lessons", "Break it"] as const).map((g) => (
+              {(["Lessons", "Break it", "Context"] as const).map((g) => (
                 <optgroup key={g} label={g}>
                   {scenarios
                     .filter((s) => s.group === g)

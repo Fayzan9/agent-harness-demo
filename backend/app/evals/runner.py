@@ -28,6 +28,7 @@ VARIANTS: dict[str, dict] = {
         "overrides": {"context_limit": 350, "compact_at": 30},
     },
     "flaky_api": {"label": "Flaky API", "description": "The first two model calls fail with a 429", "overrides": {"chaos": ["rate_limit"]}},
+    "no_search": {"label": "Without search_file", "description": "Take the search tool away, so files must be read whole", "overrides": {"drop_tools": ["search_file"]}},
 }
 
 JUDGE_PROMPT = (
@@ -95,7 +96,10 @@ async def run_one(case: dict, variant_id: str, index: int, model: str, gate: asy
                 (workdir / name).write_text(text)
             workspace_var.set(workdir)  # this task has its own copy of the context, so this stays local
 
-            setup = {**case["setup"], **VARIANTS[variant_id]["overrides"]}
+            overrides = dict(VARIANTS[variant_id]["overrides"])
+            dropped = overrides.pop("drop_tools", [])  # a variant can take tools away, whatever each case enables
+            setup = {**case["setup"], **overrides}
+            setup["tools"] = [t for t in setup.get("tools", []) if t not in dropped]
             cfg = RunConfig(**setup, task=case["task"], model=model)
             run_id = f"eval-{case['id']}-{variant_id}-{index}"
             session = EphemeralSession(run_id, cfg.memory)

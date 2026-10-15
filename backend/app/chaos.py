@@ -5,6 +5,7 @@ KINDS = {
     "bad_json": "Send broken JSON arguments on the first tool call",
     "slow_tool": "Make the first tool call hang",
     "repeat_call": "Make the agent repeat the same tool call",
+    "clock_in_prompt": "Put the current time at the very top of the instructions, so the start of the prompt changes every pass and caching cannot help",
 }
 
 

@@ -39,6 +39,7 @@ Neither needs an API key. Run from `backend/`:
 PYTHONPATH=. uv run python tests/test_reliability.py
 PYTHONPATH=. uv run python tests/test_sessions.py
 PYTHONPATH=. uv run python tests/test_evals.py
+PYTHONPATH=. uv run python tests/test_context_tools.py
 ```
 
 ## Evals
@@ -51,3 +52,18 @@ The **Evals** screen (top bar) runs the same tasks several times and checks each
 - Runs cost real model calls (about three per run, plus one for each judge check). Above 12 runs the Run button asks for a second click, and one click is capped at 90 runs.
 - Click a dot in the grid to see which checks failed, then **Replay this run** to step through it in the Playground.
 - Results are also saved to `backend/evals_out/` (gitignored).
+
+## Context engineering and caching
+
+Scenarios in the **Context** group of the dropdown, and Inspect > **Context**, show these ideas live:
+
+- **What changed since the previous pass.** The Context tab compares each pass with the one before it, message by message, and colours every message: same, changed or new. A provider's prompt cache only helps with an exact match from the very start, so the first difference is where the benefit ends. Under it, the provider's own report of how many input tokens it served from cache.
+- **Cache: a stable prefix** versus **Cache breaker: clock in the prompt.** The same long instructions, with and without the current time at the top. Stable: nearly everything is cached after the first pass. Clock: nothing is. The switch is `clock_in_prompt` under Break it in Settings.
+- **Big file: read it all / search instead / cut at 800 characters.** `handbook.txt` is a 2,600-token file with one useful fact. Reading it whole puts it all in context. With the `search_file` tool the agent loads one line. Blind trimming (the `truncate_result` hook) can make things worse, because the agent pages through the file anyway.
+- **Notes outlive compaction.** `save_note` and `read_notes` keep facts in `scratchpad.md`, outside the conversation. The file is cleared when a new chat starts.
+- **Largest items** in the Context tab points at what is eating the window.
+
+Two things the numbers taught while building this:
+
+- Whether the agent uses a cheaper tool depends on the tool descriptions. With a plain `read_file` description it never used `search_file`. Adding "a long file is expensive, use search_file first if you only need one fact" changed that every time. The eval case `find-in-big-file` measures it (compare Baseline with **Without search_file**).
+- Cache hits are best effort. On this provider the same prompt was sometimes cold and sometimes cached, and caching does not make the context smaller. It only makes re-reading it cheaper.

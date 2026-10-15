@@ -1,4 +1,5 @@
 import json
+import time
 
 SYSTEM = (
     "You are a careful assistant that completes tasks step by step. "
@@ -19,6 +20,7 @@ class Context:
         self.memory = memory
         self.summary = ""  # replaces old messages after compaction
         self.anchor: dict | None = None  # the latest user request, kept word for word through compaction
+        self.clock_first = False  # the Break it "clock in prompt" switch. Not saved: it is set again on every run
         self.messages: list[dict] = []
 
     def add(self, message: dict):
@@ -44,7 +46,12 @@ class Context:
         return ctx
 
     def system_prompt(self) -> str:
-        return SYSTEM + (f"\n\nMemory file:\n{self.memory}" if self.memory else "")
+        prompt = SYSTEM + (f"\n\nMemory file:\n{self.memory}" if self.memory else "")
+        if self.clock_first:  # a changing value at the very top means no prefix ever matches again
+            now = time.time()
+            stamp = time.strftime("%H:%M:%S", time.localtime(now)) + f".{int(now * 1000) % 1000:03d}"
+            return f"Current time: {stamp}\n\n{prompt}"
+        return prompt
 
     def as_messages(self) -> list[dict]:
         kept = [self.anchor] if self.anchor else []

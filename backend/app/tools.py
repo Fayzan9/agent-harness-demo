@@ -20,11 +20,10 @@ REGISTRY: dict[str, Tool] = {}
 
 def tool(fn: Callable) -> Callable:
     """Register a function as a tool. Schema comes from its type hints and docstring."""
-    props = {
-        name: {"type": _JSON_TYPES[p.annotation]}
-        for name, p in inspect.signature(fn).parameters.items()
-    }
-    schema = {"type": "object", "properties": props, "required": list(props)}
+    params = inspect.signature(fn).parameters
+    props = {name: {"type": _JSON_TYPES[p.annotation]} for name, p in params.items()}
+    required = [name for name, p in params.items() if p.default is inspect.Parameter.empty]  # a default makes it optional
+    schema = {"type": "object", "properties": props, "required": required}
     REGISTRY[fn.__name__] = Tool(fn.__name__, inspect.getdoc(fn) or "", schema, fn)
     return fn
 
@@ -52,9 +51,20 @@ def list_files() -> str:
 
 
 @tool
-def read_file(path: str) -> str:
-    """Read a text file from the workspace."""
-    return _safe(path).read_text()
+def read_file(path: str, offset: int = 0, max_chars: int = 0) -> str:
+    """Read a text file from the workspace. Whatever you read stays in your context, so a long file is expensive. If you only need one fact, use search_file first. To read a long file in pieces, set offset (where to start) and max_chars (how much; 0 means everything)."""
+    text = _safe(path).read_text()[offset:]
+    return text[:max_chars] if max_chars > 0 else text
+
+
+@tool
+def search_file(path: str, query: str) -> str:
+    """Find the lines of a file that contain a word or phrase (not case sensitive). Returns up to 10 matches with line numbers, so you do not have to read the whole file."""
+    hits = [f"line {n}: {line}" for n, line in enumerate(_safe(path).read_text().splitlines(), 1) if query.lower() in line.lower()]
+    if not hits:
+        return "No matches."
+    more = f"\n({len(hits) - 10} more matches not shown)" if len(hits) > 10 else ""
+    return "\n".join(hits[:10]) + more
 
 
 @tool
@@ -68,3 +78,22 @@ def write_file(path: str, content: str) -> str:
 def delegate(task: str) -> str:
     """Hand a self-contained task to a helper agent. It works in its own fresh context and returns only a short summary."""
     raise NotImplementedError("The loop runs this one itself, because it needs to start another loop")
+
+
+SCRATCHPAD = "scratchpad.md"
+
+
+@tool
+def save_note(text: str) -> str:
+    """Save a short note to a scratchpad file outside the conversation. Notes stay available even after old messages are summarized."""
+    path = _safe(SCRATCHPAD)
+    with path.open("a") as f:
+        f.write(f"- {text}\n")
+    return f"Saved. The scratchpad now has {len(path.read_text().splitlines())} notes."
+
+
+@tool
+def read_notes() -> str:
+    """Read everything saved to the scratchpad."""
+    path = _safe(SCRATCHPAD)
+    return path.read_text() if path.exists() else "(no notes yet)"

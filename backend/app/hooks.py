@@ -73,4 +73,4 @@ def redact_emails(tool: str, result: str, param) -> str:
 def truncate_result(tool: str, result: str, param) -> str:
     if len(result) <= param:
         return result
-    return f"{result[:param]}... [cut, {len(result) - param} more characters]"
+    return f"{result[:param]}... [cut, {len(result) - param} more characters. For a long file, read the rest in pieces with read_file offset and max_chars]"

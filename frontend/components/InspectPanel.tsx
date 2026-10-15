@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { EVENT_COLOR, messageText, summarize, type View } from "@/lib/derive";
 import type { HarnessEvent, Usage, WorkspaceFile } from "@/lib/types";
+import { analyzeLatestPass, type Pass, type Status } from "@/lib/cachediff";
 import { PARTS } from "./ContextBar";
 import TraceTab from "./TraceTab";
 import { Panel, cx } from "./ui";
@@ -51,7 +52,7 @@ export default function InspectPanel({ tab, setTab, events, view, memory, setMem
       <div className="h-[520px] overflow-hidden md:h-[370px]">
         {tab === "events" && <EventsTab events={events} canBranch={canBranch} onBranch={onBranch} />}
         {tab === "trace" && <TraceTab events={events} />}
-        {tab === "context" && <ContextTab view={view} focusPart={focusPart} />}
+        {tab === "context" && <ContextTab view={view} events={events} focusPart={focusPart} />}
         {tab === "memory" && <MemoryTab memory={memory} setMemory={setMemory} />}
         {tab === "files" && <FilesTab files={files} written={view.written} />}
       </div>
@@ -116,6 +117,12 @@ const ROLE_TONE: Record<string, string> = {
   tool: "text-warn",
 };
 
+const STATUS_BAR: Record<Status, { color: string; label: string }> = {
+  same: { color: "#2dbd9b", label: "same as the previous pass" },
+  changed: { color: "#f5b942", label: "changed or rewritten" },
+  new: { color: "#8b6cff", label: "new" },
+};
+
 function Messages({ usage, title }: { usage?: Usage; title: string }) {
   if (!usage?.messages) return null;
   return (
@@ -133,8 +140,84 @@ function Messages({ usage, title }: { usage?: Usage; title: string }) {
   );
 }
 
-function ContextTab({ view, focusPart }: { view: View; focusPart?: string }) {
-  if (!view.usage) return <Empty>Run something to see what is inside the context window.</Empty>;
+function PassView({ pass }: { pass: Pass }) {
+  const pct = (n: number) => `${(n / Math.max(pass.totalTokens, 1)) * 100}%`;
+  const share = pass.hogs[0];
+  const tokensOf = (s: Status) => pass.tokens.reduce((sum, t, i) => sum + (pass.status[i] === s ? t : 0), 0);
+  const r = pass.reported;
+  return (
+    <div className="mb-4 space-y-3">
+      <div className="rounded-xl border border-line bg-bg p-3">
+        <p className="mb-2 text-xs font-medium text-mute">
+          What changed since the previous pass{pass.hasPrevious ? ` · about ${Math.round((pass.matchedTokens / Math.max(pass.totalTokens, 1)) * 100)}% matches exactly` : ""}
+        </p>
+        <div className="flex h-3 overflow-hidden rounded-full bg-line/50">
+          {(["same", "changed", "new"] as Status[]).map((s) => (
+            <span key={s} style={{ width: pct(tokensOf(s)), background: STATUS_BAR[s].color }} title={`${STATUS_BAR[s].label}: ${tokensOf(s)} tokens`} />
+          ))}
+        </div>
+        <div className="mt-1.5 flex flex-wrap gap-x-4 text-[11px] text-mute">
+          {(["same", "changed", "new"] as Status[]).map((s) => (
+            <span key={s} className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-sm" style={{ background: STATUS_BAR[s].color }} />
+              {STATUS_BAR[s].label}
+            </span>
+          ))}
+        </div>
+        <p className="mt-2 text-sm">{pass.verdict}</p>
+        {r && (
+          <p className="mt-2 rounded-lg bg-accent-soft px-2.5 py-1.5 text-xs">
+            The provider reported <span className="font-semibold">{r.cached} of {r.prompt}</span> input tokens served from its cache ({r.seconds}s).
+            {r.cached === 0 && r.prompt < 1024 && " Prompts this short are usually not cached at all."}
+            {r.cached === 0 && r.prompt >= 1024 && pass.hasPrevious && pass.matchedTokens < pass.totalTokens / 2 && " The start of the prompt changed, so there was no match."}
+          </p>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-line bg-bg p-3">
+        <p className="mb-2 text-xs font-medium text-mute">Largest items in this pass</p>
+        <ul className="space-y-1 text-sm">
+          {pass.hogs.map((h) => (
+            <li key={h.index} className="flex justify-between gap-3">
+              <span>
+                Message {h.index} · {h.label}
+              </span>
+              <span className="tabular-nums text-mute">
+                {h.tokens} tokens · {Math.round(h.share * 100)}%
+              </span>
+            </li>
+          ))}
+        </ul>
+        {share && share.label.startsWith("tool result") && share.share >= 0.4 && (
+          <p className="mt-2 text-xs text-mute">
+            One tool result is {Math.round(share.share * 100)}% of the context. Reading less (a search instead of a whole file) keeps it small.
+          </p>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        {pass.messages.map((m, i) => (
+          <div key={i} className="flex overflow-hidden rounded-xl border border-line bg-bg">
+            <span className="w-1.5 shrink-0" style={{ background: STATUS_BAR[pass.status[i]].color }} title={STATUS_BAR[pass.status[i]].label} />
+            <div className="min-w-0 flex-1 p-2.5">
+              <div className="flex items-center justify-between">
+                <span className={cx("text-xs font-semibold uppercase tracking-wide", ROLE_TONE[m.role])}>
+                  {i} · {m.role}
+                </span>
+                <span className="text-[11px] tabular-nums text-mute">{pass.tokens[i]} tokens</span>
+              </div>
+              <pre className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap break-words font-mono text-xs">{messageText(m)}</pre>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ContextTab({ view, events, focusPart }: { view: View; events: HarnessEvent[]; focusPart?: string }) {
+  const pass = useMemo(() => analyzeLatestPass(events), [events]);
+  if (!view.usage || !pass) return <Empty>Run something to see what is inside the context window.</Empty>;
   const part = PARTS.find((p) => p.key === focusPart);
   return (
     <div className="h-full overflow-y-auto pr-1">
@@ -144,7 +227,8 @@ function ContextTab({ view, focusPart }: { view: View; focusPart?: string }) {
           {part.key === "tools" && ` Tool menu: ${view.tools.join(", ") || "none"}.`}
         </p>
       )}
-      <Messages usage={view.usage} title="Main agent" />
+      <p className="mb-2 text-xs font-medium text-mute">Main agent: exactly what the model was sent on its latest turn</p>
+      <PassView pass={pass} />
       <Messages usage={view.subUsage} title="Helper agent" />
     </div>
   );

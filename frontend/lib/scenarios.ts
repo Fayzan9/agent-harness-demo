@@ -1,6 +1,6 @@
 import type { Setup } from "./types";
 
-export type Scenario = { id: string; group: "Lessons" | "Break it"; label: string; blurb: string; task: string; setup: Setup };
+export type Scenario = { id: string; group: "Lessons" | "Break it" | "Context"; label: string; blurb: string; task: string; setup: Setup };
 
 const base: Setup = {
   tools: [],
@@ -106,5 +106,74 @@ export const SCENARIOS: Scenario[] = [
     setup: { ...base, tools: ["read_file"], gates: { read_file: "auto" }, chaos: ["repeat_call"] },
   },
 ];
+
+// About 1,100 tokens of standing instructions, enough for a provider's prompt cache to kick in.
+const LONG_MEMORY = Array.from({ length: 90 }, (_, i) => `Rule ${i + 1}: Check the facts twice before answering and keep replies short.`).join("\n");
+
+const readTwoFiles = "Read notes.txt and contact.txt, then tell me who owns the demo and the contact email.";
+const refundTask = "Find the refund policy in handbook.txt and tell me how many days customers have to return items.";
+
+SCENARIOS.push(
+  {
+    id: "ctx-big-read",
+    group: "Context",
+    label: "Big file: read it all",
+    blurb: "Without a search tool the whole handbook lands in context. Watch Tool results in the context bar.",
+    task: refundTask,
+    setup: { ...base, tools: ["read_file"], gates: { read_file: "auto" } },
+  },
+  {
+    id: "ctx-big-search",
+    group: "Context",
+    label: "Big file: search instead",
+    blurb: "With search_file the agent loads only the line it needs. Same answer, a fraction of the context.",
+    task: refundTask,
+    setup: { ...base, tools: ["read_file", "search_file"], gates: { read_file: "auto", search_file: "auto" } },
+  },
+  {
+    id: "ctx-big-cut",
+    group: "Context",
+    label: "Big file: cut at 800 characters",
+    blurb: "Blind trimming is not free. The agent pages through the file anyway, and can still miss the answer.",
+    task: refundTask,
+    setup: { ...base, tools: ["read_file"], gates: { read_file: "auto" }, hooks: [{ name: "truncate_result", param: 800 }] },
+  },
+  {
+    id: "ctx-cache-stable",
+    group: "Context",
+    label: "Cache: a stable prefix",
+    blurb: "Long standing instructions repeat on every pass. Open Inspect > Context to see the provider serve them from cache.",
+    task: readTwoFiles,
+    setup: { ...base, tools: ["list_files", "read_file"], gates: { list_files: "auto", read_file: "auto" }, memory: LONG_MEMORY },
+  },
+  {
+    id: "ctx-cache-clock",
+    group: "Context",
+    label: "Cache breaker: clock in the prompt",
+    blurb: "The same run, with the time at the very top of the instructions. The start changes every pass, so nothing is cached.",
+    task: readTwoFiles,
+    setup: {
+      ...base,
+      tools: ["list_files", "read_file"],
+      gates: { list_files: "auto", read_file: "auto" },
+      memory: LONG_MEMORY,
+      chaos: ["clock_in_prompt"],
+    },
+  },
+  {
+    id: "ctx-notes",
+    group: "Context",
+    label: "Notes outlive compaction",
+    blurb: "A tiny context forces compaction. Facts saved to the scratchpad file are still there afterwards.",
+    task: "Read notes.txt and contact.txt and save the key facts as notes. Then tell me who owns the demo and the contact email.",
+    setup: {
+      ...base,
+      tools: ["list_files", "read_file", "save_note", "read_notes"],
+      gates: { list_files: "auto", read_file: "auto", save_note: "auto", read_notes: "auto" },
+      context_limit: 700,
+      compact_at: 50,
+    },
+  },
+);
 
 export const CUSTOM_ID = "custom";

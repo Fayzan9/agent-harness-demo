@@ -164,6 +164,7 @@ export function derive(events: HarnessEvent[]): View {
     if (e.type === "model_replied") {
       for (const c of e.data.tool_calls) if (c.name === "write_file") paths.set(c.id, c.args.path);
     }
+    if (e.type === "tool_result" && e.data.tool === "save_note" && e.data.allowed) written.add("scratchpad.md");
     if (e.type === "tool_result" && e.data.tool === "write_file" && e.data.allowed && paths.has(e.data.call_id)) {
       if (!String(e.data.result).startsWith("Error")) written.add(paths.get(e.data.call_id)!);
     }
