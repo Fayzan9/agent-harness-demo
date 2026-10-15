@@ -12,6 +12,7 @@ from .context import Context
 from .controls import Controls
 from .events import Event
 from .gates import Approvals
+from .sessions import Session
 
 SUBAGENT_MAX_STEPS = 6
 MAX_MODEL_ATTEMPTS = 4  # the first try plus three retries
@@ -31,24 +32,88 @@ class Reply:
     usage: dict
 
 
-async def run(cfg: RunConfig, approvals: Approvals, controls: Controls, run_id: str):
-    """One run. Yields an Event for every step so a UI can draw it."""
-    yield Event("run_started", data={"run_id": run_id, "task": cfg.task, "model": cfg.model, "tools": cfg.tools})
-    if cfg.memory:
-        yield Event("memory_loaded", data={"text": cfg.memory})
-    chaos = Chaos(cfg.chaos) if cfg.chaos else None
-    async for event in agent_loop(cfg, cfg.task, approvals, lambda: controls.take_compact(run_id), chaos):
-        yield event
+async def run(
+    cfg: RunConfig,
+    approvals: Approvals,
+    controls: Controls,
+    run_id: str,
+    session: Session,
+    task: str = "",
+    resume: bool = False,
+    label: str = "",
+):
+    """One turn of a session. Yields an Event for every step so a UI can draw it."""
+    first_turn = not session.turns
+    label = label or task
+    session.turns.append({"run_id": run_id, "task": label})
+    session.setup = cfg.model_dump(exclude={"task", "model"})
+    finished = False
+    try:
+        if task:
+            session.close_pending("a new message arrived first")  # keep the history valid for the model
+            session.ctx.add({"role": "user", "content": task})
+        session.set_status("running")
+        yield Event(
+            "run_started",
+            data={
+                "run_id": run_id,
+                "session_id": session.id,
+                "turn": len(session.turns),
+                "task": label,
+                "model": cfg.model,
+                "tools": cfg.tools,
+                "resumed": resume,
+            },
+        )
+        if session.ctx.memory and first_turn:
+            yield Event("memory_loaded", data={"text": session.ctx.memory})
+
+        chaos = Chaos(cfg.chaos) if cfg.chaos else None
+        pending = _pending_for_resume(session) if resume else None
+        async for event in agent_loop(
+            cfg, session.ctx, approvals, lambda: controls.take_compact(run_id), chaos, session, pending
+        ):
+            yield event
+        finished = True
+    finally:
+        if finished:
+            session.close_pending("the run ended first")
+        session.set_status("idle" if finished else "interrupted")
 
 
-async def agent_loop(cfg: RunConfig, task: str, approvals: Approvals, compact_requested, chaos: Chaos | None = None):
+def _pending_for_resume(session: Session) -> list[dict]:
+    """Calls to finish on resume. One that was mid-run may already have taken effect, so flag it."""
+    calls = [dict(c) for c in session.pending_calls]
+    flight = session.in_flight
+    for call in calls:
+        if flight and flight["call_id"] == call["id"] and flight["state"] == "running":
+            call["maybe_ran"] = True
+    return calls
+
+
+async def agent_loop(
+    cfg: RunConfig,
+    ctx: Context,
+    approvals: Approvals,
+    compact_requested,
+    chaos: Chaos | None = None,
+    session: Session | None = None,
+    pending_calls: list[dict] | None = None,
+):
     """The loop itself. The main agent and every subagent run this same code."""
-    ctx = Context(cfg.memory)
     schemas = tools.schemas(cfg.tools)
-    ctx.add({"role": "user", "content": task})
     seen: Counter = Counter()  # identical tool calls so far, for loop detection
     bad_turns = 0  # consecutive turns where the model sent broken arguments
     last_action = ""
+
+    if pending_calls:  # finish the step that a crash or a Stop cut short
+        try:
+            for call in pending_calls:
+                async for event in _execute(call, cfg, approvals, ctx, 0, seen, chaos, session):
+                    yield event
+        except StuckInLoop as e:
+            yield Event("error", 0, {"message": str(e)})
+            return
 
     for step in range(1, cfg.max_steps + 1):
         reason = _compact_reason(ctx, cfg, schemas, compact_requested())
@@ -82,6 +147,8 @@ async def agent_loop(cfg: RunConfig, task: str, approvals: Approvals, compact_re
                 yield event
 
         ctx.add(_assistant_message(reply.message.content, calls))
+        if session:
+            session.begin_calls(calls)  # saves the context too, so the calls and their history stay together
         yield Event(
             "model_replied",
             step,
@@ -110,7 +177,7 @@ async def agent_loop(cfg: RunConfig, task: str, approvals: Approvals, compact_re
 
         try:
             for call in calls:
-                async for event in _execute(call, cfg, approvals, ctx, step, seen, chaos):
+                async for event in _execute(call, cfg, approvals, ctx, step, seen, chaos, session):
                     yield event
         except StuckInLoop as e:
             yield Event("error", step, {"message": str(e)})
@@ -186,7 +253,16 @@ async def _compact(ctx: Context, cfg: RunConfig, schemas: list[dict], reason: st
     )
 
 
-async def _execute(call: dict, cfg: RunConfig, approvals: Approvals, ctx: Context, step: int, seen: Counter, chaos: Chaos | None):
+async def _execute(
+    call: dict,
+    cfg: RunConfig,
+    approvals: Approvals,
+    ctx: Context,
+    step: int,
+    seen: Counter,
+    chaos: Chaos | None,
+    session: Session | None = None,
+):
     """before hooks, then the gate, then the tool, then after hooks. The result goes into context."""
     name, args = call["name"], call["args"]
     allowed, result, duration = False, None, 0.0
@@ -218,17 +294,26 @@ async def _execute(call: dict, cfg: RunConfig, approvals: Approvals, ctx: Contex
         result = f"Error: tool '{name}' is not enabled"
 
     if result is None:
-        mode = cfg.gates.get(name, "ask")
+        maybe_ran = bool(call.get("maybe_ran"))
+        mode = "ask" if maybe_ran else cfg.gates.get(name, "ask")  # never repeat a call that may have run without asking
         yield Event("gate_checked", step, {"call_id": call["id"], "tool": name, "mode": mode})
         allowed = mode == "auto"
         if mode == "ask":
-            yield Event("approval_requested", step, {"call_id": call["id"], "tool": name, "args": args})
+            if session:
+                session.flight(call["id"], name, "awaiting_approval")
+            yield Event(
+                "approval_requested",
+                step,
+                {"call_id": call["id"], "tool": name, "args": args, "maybe_ran": maybe_ran},
+            )
             allowed = await approvals.wait(call["id"])
 
         if not allowed:
             result = "Denied: the gate did not allow this tool call"
         else:
             started = time.perf_counter()
+            if session:
+                session.flight(call["id"], name, "running")
             if name == "delegate":
                 result = "Subagent finished without an answer"
                 agent_id = f"sub-{call['id'][-6:]}"
@@ -251,6 +336,8 @@ async def _execute(call: dict, cfg: RunConfig, approvals: Approvals, ctx: Contex
                 result = new_result
 
     ctx.add({"role": "tool", "tool_call_id": call["id"], "content": result})
+    if session:
+        session.finish_call(call["id"])
     yield Event(
         "tool_result",
         step,
@@ -274,7 +361,9 @@ async def _subagent(task: str, cfg: RunConfig, approvals: Approvals, agent_id: s
     """Run the same loop with a fresh context. Only its final answer goes back to the caller."""
     sub_cfg = cfg.model_copy(update={"tools": [t for t in cfg.tools if t != "delegate"], "max_steps": SUBAGENT_MAX_STEPS})
     yield Event("subagent_started", step, {"task": task}, agent=agent_id)
-    async for event in agent_loop(sub_cfg, task, approvals, lambda: False):
+    ctx = Context(cfg.memory)  # fresh: the helper sees none of the main conversation
+    ctx.add({"role": "user", "content": task})
+    async for event in agent_loop(sub_cfg, ctx, approvals, lambda: False):
         yield replace(event, agent=agent_id)
 
 

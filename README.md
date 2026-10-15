@@ -17,9 +17,25 @@ A visual playground that shows how an agent harness works: the loop, tools, gate
 | Zone | What it is |
 |---|---|
 | Top bar | Scenario presets (one per lesson), Auto or Step mode, Settings, run status |
-| 1 Ask | Chat. Your task, the agent's answer, and Allow or Deny cards |
+| 1 Ask | A real conversation. Follow-ups remember earlier turns. Click a turn to replay it. Allow or Deny cards, and a Resume card if a chat stopped part-way. New chat starts fresh |
 | 2 Watch | Context bar, then the loop: Agent, before hooks, Gate, Tools, after hooks. A helper lane appears when `delegate` is used. Click any box to configure it |
 | 3 Inspect | Events, Trace (timed waterfall, waits, tokens, cache), Context (exactly what the model was sent), Memory (editable), Files |
 | 4 Replay | Back, Next, Play and a scrubber. Every event is kept, so you can rewind a run |
 
 Every run first restores the demo files in `workspace/` (it never deletes anything).
+
+## Sessions, History and re-running
+
+- Every chat is saved to `backend/sessions/` after each step, and every run's events to `backend/runs/` (both gitignored).
+- **History** (top bar) lists saved chats. Open one to replay it or carry on.
+- **Resume**: if the backend dies or you press Stop mid-step, the chat is marked as stopped part-way. Resume continues from the last checkpoint. A call that was already running when it stopped always asks you again, even if its gate is on auto.
+- **Re-run from here** (Inspect > Events): starts a new chat from what the model saw at that event, with your current settings. Change a gate or hook first to try a "what if".
+
+## Tests
+
+Neither needs an API key. Run from `backend/`:
+
+```bash
+PYTHONPATH=. uv run python tests/test_reliability.py
+PYTHONPATH=. uv run python tests/test_sessions.py
+```

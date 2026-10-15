@@ -17,11 +17,12 @@ type Props = {
   mode: "auto" | "step";
   onMode: (m: "auto" | "step") => void;
   onSettings: () => void;
+  onHistory: () => void;
   status: Status;
   stats: string;
 };
 
-export default function TopBar({ scenarios, scenarioId, onScenario, mode, onMode, onSettings, status, stats }: Props) {
+export default function TopBar({ scenarios, scenarioId, onScenario, mode, onMode, onSettings, onHistory, status, stats }: Props) {
   const current = scenarios.find((s) => s.id === scenarioId);
   return (
     <header className="flex flex-wrap items-center gap-3">
@@ -62,6 +63,7 @@ export default function TopBar({ scenarios, scenarioId, onScenario, mode, onMode
       </div>
 
       <Button onClick={onSettings}>Settings</Button>
+      <Button onClick={onHistory}>History</Button>
       <div className="ml-auto flex items-center gap-3">
         {stats && <span className="text-xs tabular-nums text-mute">{stats}</span>}
         <Chip tone={STATUS[status].tone}>{STATUS[status].label}</Chip>

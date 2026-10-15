@@ -23,6 +23,29 @@ export type Usage = {
   messages?: ChatMessage[]; // exactly what the model was sent
 };
 
+export type Turn = { runId: string; task: string; events: HarnessEvent[] };
+
+export type InterruptedAt = { tool: string; state: string };
+
+export type SessionSummary = {
+  id: string;
+  title: string;
+  created: number;
+  updated: number;
+  status: "idle" | "running" | "interrupted";
+  turns: number;
+  interrupted_at: InterruptedAt | null;
+};
+
+export type SessionDetail = {
+  id: string;
+  title: string;
+  status: string;
+  interrupted_at: InterruptedAt | null;
+  setup: Setup | null;
+  turns: { run_id: string; task: string; events: HarnessEvent[] }[];
+};
+
 export type WorkspaceFile = { name: string; content: string; seed: boolean };
 
 /** Everything the user can set except the task, which comes from the chat box. */

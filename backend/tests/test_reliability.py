@@ -9,7 +9,10 @@ from types import SimpleNamespace as NS
 
 import litellm
 
-from app import llm, tools
+import tempfile
+from pathlib import Path
+
+from app import llm, sessions, tools
 from app.config import RunConfig
 from app.controls import Controls
 from app.gates import Approvals
@@ -33,10 +36,14 @@ def script(items):
     llm.complete = fake
 
 
+sessions.SESSIONS_DIR = Path(tempfile.mkdtemp())
+
+
 async def collect(**kw):
     cfg = RunConfig(task="t", model="m", tools=["read_file", "list_files", "slow"], gates={"read_file": "auto", "list_files": "auto", "slow": "auto"}, **kw)
     out = []
-    async for e in run(cfg, Approvals(), Controls(), "test"):
+    session = sessions.create("", "t")
+    async for e in run(cfg, Approvals(), Controls(), "test", session, "t"):
         out.append(e)
     return out
 

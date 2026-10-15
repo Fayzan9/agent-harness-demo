@@ -46,7 +46,7 @@ export function summarize(e: HarnessEvent): string {
   const d = e.data;
   switch (e.type) {
     case "run_started":
-      return `Run started with ${d.model}`;
+      return `${d.resumed ? "Resumed" : "Run started"} with ${d.model}`;
     case "memory_loaded":
       return `Memory loaded: ${d.text}`;
     case "context_updated":

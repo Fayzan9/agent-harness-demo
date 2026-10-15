@@ -3,20 +3,23 @@
 import { useEffect, useMemo, useState } from "react";
 import AskPanel from "@/components/AskPanel";
 import ConfigDialog, { type Target } from "@/components/ConfigDialog";
+import HistoryDialog from "@/components/HistoryDialog";
 import InspectPanel, { type Tab } from "@/components/InspectPanel";
 import ReplayBar from "@/components/ReplayBar";
 import TopBar from "@/components/TopBar";
 import WatchPanel from "@/components/WatchPanel";
-import { approve, getOptions, getWorkspace, resetWorkspace } from "@/lib/api";
+import { approve, getOptions, getSession, getSessions, getWorkspace, resetWorkspace } from "@/lib/api";
 import { derive } from "@/lib/derive";
 import { CUSTOM_ID, SCENARIOS } from "@/lib/scenarios";
-import type { Options, Setup, WorkspaceFile } from "@/lib/types";
+import type { Options, SessionSummary, Setup, WorkspaceFile } from "@/lib/types";
 import { usePlayback } from "@/lib/usePlayback";
-import { useRun } from "@/lib/useRun";
+import { useSession } from "@/lib/useSession";
 
 export default function Home() {
   const [options, setOptions] = useState<Options | null>(null);
   const [files, setFiles] = useState<WorkspaceFile[]>([]);
+  const [history, setHistory] = useState<SessionSummary[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [scenarioId, setScenarioId] = useState(SCENARIOS[0].id);
   const [setup, setSetup] = useState<Setup>(SCENARIOS[0].setup);
   const [input, setInput] = useState(SCENARIOS[0].task);
@@ -24,24 +27,42 @@ export default function Home() {
   const [focusPart, setFocusPart] = useState<string>();
   const [target, setTarget] = useState<Target | null>(null);
   const [decided, setDecided] = useState<Record<string, boolean>>({});
+  const [picked, setPicked] = useState<number | null>(null); // null means follow the newest turn
 
-  const run = useRun();
-  const playback = usePlayback(run.events.length, run.running);
-  const viewed = useMemo(() => run.events.slice(0, playback.shown), [run.events, playback.shown]);
+  const chat = useSession();
+  const selected = picked ?? Math.max(chat.turns.length - 1, 0);
+  const turn = chat.turns[selected];
+  const events = useMemo(() => turn?.events ?? [], [turn]);
+  const live = chat.running && selected === chat.turns.length - 1;
+
+  const playback = usePlayback(events.length, live);
+  const viewed = useMemo(() => events.slice(0, playback.shown), [events, playback.shown]);
   const view = useMemo(() => derive(viewed), [viewed]);
 
   useEffect(() => {
     getOptions().then(setOptions).catch(() => setOptions(null));
   }, []);
 
-  // Refresh the file list whenever a run ends, and once on load.
+  // Refresh the file list and the history whenever a run ends, and once on load.
   useEffect(() => {
-    if (!run.running) getWorkspace().then(setFiles).catch(() => setFiles([]));
-  }, [run.running]);
+    if (chat.running) return;
+    getWorkspace().then(setFiles).catch(() => setFiles([]));
+    getSessions().then(setHistory).catch(() => setHistory([]));
+  }, [chat.running]);
+
+  const current = history.find((h) => h.id === chat.sessionId);
+  const interrupted = !chat.running && current?.status === "interrupted" ? { at: current.interrupted_at } : null;
 
   const changeSetup = (s: Setup) => {
     setSetup(s);
     setScenarioId(CUSTOM_ID);
+  };
+
+  const newChat = () => {
+    chat.newChat();
+    setPicked(null);
+    setDecided({});
+    playback.setMode("auto");
   };
 
   const pickScenario = (id: string) => {
@@ -50,19 +71,53 @@ export default function Home() {
     setScenarioId(id);
     setSetup(s.setup);
     setInput(s.task);
+    newChat();
+  };
+
+  const startTurn = () => {
+    setDecided({});
+    setTab("events");
+    setPicked(null);
+    playback.reset();
   };
 
   const send = async () => {
-    await resetWorkspace().catch(() => undefined); // puts the demo files back as they were
+    const firstMessage = chat.turns.length === 0;
+    if (firstMessage) await resetWorkspace().catch(() => undefined); // a fresh chat starts from the demo files
+    startTurn();
+    chat.start({ ...setup, task: input });
+    if (!firstMessage) setInput("");
+  };
+
+  const resume = () => {
+    startTurn();
+    chat.resume({ ...setup, task: "" });
+  };
+
+  const rerunFrom = (eventIndex: number) => {
+    if (!turn?.runId) return;
+    startTurn();
+    chat.branch(turn.runId, eventIndex, { ...setup, task: "" });
+  };
+
+  const openChat = async (id: string) => {
+    const detail = await getSession(id);
+    chat.load(detail);
+    if (detail.setup) changeSetup({ ...setup, ...detail.setup }); // reopen with the settings that chat used
+    setPicked(null);
     setDecided({});
-    setTab("events");
-    playback.reset();
-    run.start({ ...setup, task: input });
+    playback.setMode("auto");
+    setHistoryOpen(false);
   };
 
   const decide = (callId: string, allow: boolean) => {
     setDecided((d) => ({ ...d, [callId]: allow }));
     approve(callId, allow);
+  };
+
+  const selectTurn = (i: number) => {
+    setPicked(i);
+    playback.setMode("auto");
   };
 
   const pickSegment = (key: string) => {
@@ -79,28 +134,35 @@ export default function Home() {
         mode={playback.mode}
         onMode={playback.setMode}
         onSettings={() => setTarget("settings")}
+        onHistory={() => setHistoryOpen(true)}
         status={view.status}
         stats={view.stats}
       />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-[320px_minmax(0,1fr)]">
         <AskPanel
+          turns={chat.turns}
+          selected={selected}
+          onSelect={selectTurn}
           view={view}
           input={input}
           setInput={setInput}
-          running={run.running}
+          running={chat.running}
           decided={decided}
-          stepHint={run.events.length > 0 && playback.shown === 0}
+          stepHint={events.length > 0 && playback.shown === 0}
+          interrupted={interrupted}
           onSend={send}
-          onStop={run.stop}
+          onStop={chat.stop}
           onDecide={decide}
+          onResume={resume}
+          onNewChat={newChat}
         />
         <WatchPanel
           view={view}
           threshold={setup.compact_at}
-          running={run.running}
-          compactQueued={run.compactQueued}
-          onCompact={run.compact}
+          running={live}
+          compactQueued={chat.compactQueued}
+          onCompact={chat.compact}
           onStage={setTarget}
           onSegment={pickSegment}
         />
@@ -115,11 +177,13 @@ export default function Home() {
         setMemory={(memory) => changeSetup({ ...setup, memory })}
         files={files}
         focusPart={focusPart}
+        canBranch={!chat.running && !!turn?.runId}
+        onBranch={rerunFrom}
       />
 
       <ReplayBar
         shown={playback.shown}
-        total={run.events.length}
+        total={events.length}
         mode={playback.mode}
         playing={playback.playing}
         onBack={playback.back}
@@ -129,6 +193,13 @@ export default function Home() {
       />
 
       <ConfigDialog target={target} onClose={() => setTarget(null)} options={options} setup={setup} setSetup={changeSetup} />
+      <HistoryDialog
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        sessions={history}
+        currentId={chat.sessionId}
+        onPick={openChat}
+      />
     </main>
   );
 }

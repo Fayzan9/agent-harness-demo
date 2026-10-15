@@ -14,7 +14,7 @@ class HookSetting(BaseModel):
 class RunConfig(BaseModel):
     """Everything the UI can set before a run."""
 
-    task: str
+    task: str = ""
     model: str = ""  # Azure deployment name; empty means the MODEL env var
     tools: list[str] = []
     gates: dict[str, str] = {}  # tool name -> auto | ask | block (default: ask)

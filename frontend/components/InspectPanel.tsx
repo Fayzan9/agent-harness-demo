@@ -25,9 +25,11 @@ type Props = {
   setMemory: (m: string) => void;
   files: WorkspaceFile[];
   focusPart?: string;
+  canBranch: boolean;
+  onBranch: (eventIndex: number) => void;
 };
 
-export default function InspectPanel({ tab, setTab, events, view, memory, setMemory, files, focusPart }: Props) {
+export default function InspectPanel({ tab, setTab, events, view, memory, setMemory, files, focusPart, canBranch, onBranch }: Props) {
   return (
     <Panel
       num={3}
@@ -47,7 +49,7 @@ export default function InspectPanel({ tab, setTab, events, view, memory, setMem
       }
     >
       <div className="h-[520px] overflow-hidden md:h-[370px]">
-        {tab === "events" && <EventsTab events={events} />}
+        {tab === "events" && <EventsTab events={events} canBranch={canBranch} onBranch={onBranch} />}
         {tab === "trace" && <TraceTab events={events} />}
         {tab === "context" && <ContextTab view={view} focusPart={focusPart} />}
         {tab === "memory" && <MemoryTab memory={memory} setMemory={setMemory} />}
@@ -57,7 +59,7 @@ export default function InspectPanel({ tab, setTab, events, view, memory, setMem
   );
 }
 
-function EventsTab({ events }: { events: HarnessEvent[] }) {
+function EventsTab({ events, canBranch, onBranch }: { events: HarnessEvent[]; canBranch: boolean; onBranch: (i: number) => void }) {
   // Follow the newest event until the user clicks one.
   const [sel, setSel] = useState<{ idx: number; atLen: number } | null>(null);
   const idx = sel && sel.atLen === events.length ? sel.idx : events.length - 1;
@@ -91,6 +93,14 @@ function EventsTab({ events }: { events: HarnessEvent[] }) {
       </ol>
       <div className="h-full overflow-y-auto rounded-xl border border-line bg-bg p-3">
         <p className="mb-2 text-xs font-medium text-mute">Selected event: {picked?.type.replace(/_/g, " ")}</p>
+        <button
+          onClick={() => onBranch(idx)}
+          disabled={!canBranch}
+          title="Start a new chat from what the model saw at this point, using your current settings"
+          className="mb-3 rounded-lg border border-line bg-panel px-2.5 py-1 text-xs font-medium transition hover:bg-line/40 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Re-run from here
+        </button>
         <pre className="whitespace-pre-wrap break-words font-mono text-xs">
           {JSON.stringify({ ...picked?.data, messages: undefined }, null, 2)}
         </pre>
@@ -144,7 +154,7 @@ function MemoryTab({ memory, setMemory }: { memory: string; setMemory: (m: strin
   return (
     <div className="flex h-full flex-col gap-2">
       <p className="text-sm text-mute">
-        The memory file is loaded into context at the start of every run. Edit it here, then run again.
+        The memory file is loaded into context at the start of every run. Edit it here, then start a new chat. A chat keeps the memory it started with.
       </p>
       <textarea
         value={memory}

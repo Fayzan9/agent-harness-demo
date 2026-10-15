@@ -1,4 +1,4 @@
-import type { HarnessEvent, Options, RunConfig, WorkspaceFile } from "./types";
+import type { HarnessEvent, Options, RunConfig, SessionDetail, SessionSummary, WorkspaceFile } from "./types";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const JSON_HEADERS = { "Content-Type": "application/json" };
@@ -25,18 +25,17 @@ export const compact = (run_id: string) =>
     body: JSON.stringify({ run_id }),
   });
 
-/** Reads the server-sent event stream from POST /run, one event at a time. */
-export async function* streamRun(
-  cfg: RunConfig,
-  signal: AbortSignal,
-): AsyncGenerator<HarnessEvent> {
-  const res = await fetch(`${API}/run`, {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: JSON.stringify(cfg),
-    signal,
-  });
-  if (!res.ok || !res.body) throw new Error(`Server returned ${res.status}`);
+export const getSessions = (): Promise<SessionSummary[]> => fetch(`${API}/sessions`).then((r) => r.json());
+
+export const getSession = (id: string): Promise<SessionDetail> => fetch(`${API}/sessions/${id}`).then((r) => r.json());
+
+/** Reads the server-sent event stream from a POST endpoint, one event at a time. */
+async function* streamPost(path: string, body: unknown, signal: AbortSignal): AsyncGenerator<HarnessEvent> {
+  const res = await fetch(`${API}${path}`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body), signal });
+  if (!res.ok || !res.body) {
+    const detail = await res.json().then((d) => d.detail).catch(() => undefined);
+    throw new Error(detail ?? `Server returned ${res.status}`);
+  }
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -52,3 +51,13 @@ export async function* streamRun(
     }
   }
 }
+
+/** A new chat, or the next message of an existing one. */
+export const streamRun = (cfg: RunConfig, sessionId: string | null, signal: AbortSignal) =>
+  streamPost("/run", { ...cfg, session_id: sessionId }, signal);
+
+export const streamResume = (sessionId: string, cfg: RunConfig, signal: AbortSignal) =>
+  streamPost(`/sessions/${sessionId}/resume`, cfg, signal);
+
+export const streamBranch = (runId: string, eventIndex: number, cfg: RunConfig, signal: AbortSignal) =>
+  streamPost("/branch", { ...cfg, run_id: runId, event_index: eventIndex }, signal);

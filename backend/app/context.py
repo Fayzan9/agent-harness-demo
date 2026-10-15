@@ -27,6 +27,16 @@ class Context:
         self.summary = summary
         self.messages = []
 
+    def to_dict(self) -> dict:
+        return {"memory": self.memory, "summary": self.summary, "messages": self.messages}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Context":
+        ctx = cls(data.get("memory", ""))
+        ctx.summary = data.get("summary", "")
+        ctx.messages = data.get("messages", [])
+        return ctx
+
     def system_prompt(self) -> str:
         return SYSTEM + (f"\n\nMemory file:\n{self.memory}" if self.memory else "")
 
