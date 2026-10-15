@@ -8,7 +8,7 @@ A visual playground that shows how an agent harness works: the loop, tools, gate
 
 ## Run
 
-1. `cp backend/.env.example backend/.env` and fill in your Azure values.
+1. `cp backend/.env.example backend/.env` and fill in your Azure values. The app checks them at startup and refuses to start if one is missing (see `backend/app/settings.py`).
 2. Backend: `cd backend && uv run uvicorn app.main:app --port 8000`
 3. Frontend: `cd frontend && npm run dev`, then open http://localhost:3000
 
@@ -40,6 +40,7 @@ PYTHONPATH=. uv run python tests/test_reliability.py
 PYTHONPATH=. uv run python tests/test_sessions.py
 PYTHONPATH=. uv run python tests/test_evals.py
 PYTHONPATH=. uv run python tests/test_context_tools.py
+PYTHONPATH=. uv run python tests/test_settings.py
 ```
 
 ## Evals

@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 from types import SimpleNamespace as NS
 
+import fakeenv  # noqa: F401  (must come before the app is imported)
 from fastapi.testclient import TestClient
 
 from app import llm, runs, sessions, tools

@@ -27,3 +27,22 @@ metadata:
 - Remaining ideas (not started): presenter mode / guided walkthrough, multiple demo presets, tests, deployment notes. Older note:
 - (old TODO) subagents only; older note: subagents, hooks, tidy diagram edges; original list: compaction, subagents, hooks, tidy diagram edges). Old TODO line follows:
 - TODO next: Next.js UI (timeline + context bar), loop diagram (React Flow), tool/gate picker, memory editor, compaction, subagents, hooks.
+
+---
+
+## Parked for later (user decision, after step 6 commit 7f36392)
+Skipped steps, to revisit only when the user asks:
+- Step 5: Safety (prompt injection, untrusted content, egress limits)
+- Step 7: MCP (tools from outside servers)
+- Step 8: Planning / multi-agent patterns
+(Do not bring up an evals redesign.)
+
+## New teaching track: production + AWS deploy (started 2026-10-16)
+Goal: user learns first, then teaches it. Interactive, one step at a time, hands-on, security first, scaling later.
+Rule: user runs anything that needs AWS credentials; never paste keys in chat.
+
+### Production step 1: config and secrets (branch feature/production-ready, from 7f36392)
+- New `backend/app/settings.py`: pydantic-settings `Settings`, `get_settings()` (lru_cache). Required: OPENAI_API_BASE, OPENAI_API_KEY (SecretStr), MODEL. Optional: OPENAI_API_VERSION, ENVIRONMENT (local|staging|production), CORS_ORIGINS (JSON list). `hide_input_in_errors=True` so errors never echo values.
+- `main.py` calls `get_settings()` at import (fail fast) and uses `cors_origins`; `llm.py` reads settings, unwraps the key in one place. python-dotenv removed from direct deps.
+- `tests/fakeenv.py` gives tests harmless env; `tests/test_settings.py` added (5 checks). All 5 suites pass.
+- Proved: start with only a key set -> clear "Field required" errors for base and model, key not printed.

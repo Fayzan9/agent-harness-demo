@@ -1,9 +1,5 @@
 import uuid
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -16,9 +12,12 @@ from .controls import Controls
 from .evals.api import router as evals_router
 from .gates import Approvals
 from .loop import run
+from .settings import get_settings
+
+settings = get_settings()  # fail fast: a missing or wrong setting stops the app here, not in the middle of a run
 
 app = FastAPI(title="Agent harness playground")
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["*"], allow_headers=["*"])
 app.include_router(evals_router)
 approvals = Approvals()
 controls = Controls()

@@ -1,6 +1,6 @@
-import os
-
 import litellm
+
+from .settings import get_settings
 
 # Failures worth retrying: the request may well succeed a moment later.
 TRANSIENT = (
@@ -15,17 +15,18 @@ REQUEST_TIMEOUT = 60  # seconds to wait for one model call
 
 
 def default_model() -> str:
-    """Azure deployment name from the MODEL env var."""
-    return os.environ.get("MODEL", "")
+    """Azure deployment name from settings."""
+    return get_settings().model
 
 
 async def complete(deployment: str, messages: list[dict], tools: list[dict] | None):
     """One model call through LiteLLM, pointed at an Azure OpenAI deployment."""
+    s = get_settings()
     return await litellm.acompletion(
         model=f"azure/{deployment}",
-        api_base=os.environ["OPENAI_API_BASE"],
-        api_key=os.environ["OPENAI_API_KEY"],
-        api_version=os.environ.get("OPENAI_API_VERSION", "2025-04-01-preview"),
+        api_base=s.openai_api_base,
+        api_key=s.openai_api_key.get_secret_value(),  # the one place the secret is unwrapped
+        api_version=s.openai_api_version,
         messages=messages,
         tools=tools,
         timeout=REQUEST_TIMEOUT,
