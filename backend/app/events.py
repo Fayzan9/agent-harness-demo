@@ -13,5 +13,8 @@ class Event:
     ts: float = field(default_factory=time.time)
     agent: str = "main"  # which agent produced this: "main" or a subagent id
 
+    def to_json(self) -> str:
+        return json.dumps(asdict(self))
+
     def sse(self) -> str:
-        return f"data: {json.dumps(asdict(self))}\n\n"
+        return f"data: {self.to_json()}\n\n"

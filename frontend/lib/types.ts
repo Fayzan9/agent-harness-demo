@@ -42,6 +42,7 @@ export type Options = {
   models: string[];
   gate_modes: GateMode[];
   hooks: HookInfo[];
+  chaos: { name: string; description: string }[];
   tools: { name: string; description: string }[];
 };
 
@@ -53,4 +54,7 @@ export type RunConfig = {
   memory: string;
   context_limit: number;
   compact_at: number;
+  max_steps: number;
+  tool_timeout: number;
+  chaos: string[];
 };

@@ -23,3 +23,5 @@ class RunConfig(BaseModel):
     context_limit: int = 8000  # small on purpose, so compaction is easy to demo
     compact_at: int = 80  # auto-compact when context reaches this percent of the limit
     max_steps: int = 10
+    tool_timeout: int = 20  # seconds a single tool call may take
+    chaos: list[str] = []  # failures to inject on purpose, see chaos.py

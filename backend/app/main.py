@@ -9,7 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from . import hooks, llm, tools, workspace
+from . import hooks, llm, runs, tools, workspace
+from .chaos import KINDS as CHAOS_KINDS
 from .config import GATE_MODES, RunConfig
 from .controls import Controls
 from .gates import Approvals
@@ -37,6 +38,7 @@ def options():
         "models": [llm.default_model()],
         "gate_modes": GATE_MODES,
         "tools": [{"name": t.name, "description": t.description} for t in tools.REGISTRY.values()],
+        "chaos": [{"name": k, "description": d} for k, d in CHAOS_KINDS.items()],
         "hooks": [
             {
                 "name": h.name,
@@ -58,6 +60,7 @@ async def start_run(cfg: RunConfig):
     async def stream():
         try:
             async for event in run(cfg, approvals, controls, run_id):
+                runs.append(run_id, event)
                 yield event.sse()
         finally:
             controls.take_compact(run_id)  # drop any request the loop never got to

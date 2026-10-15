@@ -19,6 +19,7 @@ export type View = {
   helper: boolean;
   compacting: boolean;
   written: Set<string>;
+  stats: string;
 };
 
 export const EVENT_COLOR: Record<string, string> = {
@@ -31,6 +32,9 @@ export const EVENT_COLOR: Record<string, string> = {
   approval_requested: "var(--warn)",
   tool_result: "#f2824b",
   subagent_started: "#8b6cff",
+  retry: "var(--warn)",
+  chaos: "#ec6fa8",
+  loop_detected: "var(--bad)",
   compaction_started: "#ec6fa8",
   compaction_done: "#ec6fa8",
   done: "var(--ok)",
@@ -46,10 +50,21 @@ export function summarize(e: HarnessEvent): string {
       return `Memory loaded: ${d.text}`;
     case "context_updated":
       return `Context is ${d.total} of ${d.limit} tokens`;
-    case "model_replied":
-      return d.tool_calls.length
-        ? `Asks to use ${d.tool_calls.map((c: { name: string; args: object }) => `${c.name}(${JSON.stringify(c.args)})`).join(", ")}`
-        : `Replies: ${d.text}`;
+    case "model_replied": {
+      const cost = d.usage ? ` (${d.duration}s, ${d.usage.prompt + d.usage.completion} tokens)` : "";
+      const calls = d.tool_calls.map((c: { name: string; args: object; error?: string }) =>
+        c.error ? `${c.name} with broken arguments` : `${c.name}(${JSON.stringify(c.args)})`,
+      );
+      return (calls.length ? `Asks to use ${calls.join(", ")}` : `Replies: ${d.text}`) + cost;
+    }
+    case "retry":
+      return d.kind === "model_error"
+        ? `Model call failed. Retry ${d.attempt} of ${d.max} in ${d.delay}s: ${d.detail}`
+        : `Broken tool arguments. Giving the model another go (${d.attempt} of ${d.max}): ${d.detail}`;
+    case "chaos":
+      return `Break it: ${d.detail}`;
+    case "loop_detected":
+      return `Same ${d.tool} call ${d.count} times. It was not run, and the agent was told to try something else.`;
     case "hook_ran":
       return `${d.phase} hook ${d.hook} on ${d.tool}: ${d.outcome}${d.detail ? ` (${d.detail})` : ""}`;
     case "gate_checked":
@@ -57,7 +72,9 @@ export function summarize(e: HarnessEvent): string {
     case "approval_requested":
       return `Waiting for you to approve ${d.tool}`;
     case "tool_result":
-      return d.allowed ? `${d.tool} returned: ${d.result}` : `${d.tool} did not run: ${d.result}`;
+      return d.allowed
+        ? `${d.tool} returned: ${d.result}${d.duration ? ` (${d.duration}s)` : ""}`
+        : `${d.tool} did not run: ${d.result}`;
     case "subagent_started":
       return `Helper starts with a fresh context: ${d.task}`;
     case "compaction_started":
@@ -65,7 +82,7 @@ export function summarize(e: HarnessEvent): string {
     case "compaction_done":
       return `Context went from ${d.before} to ${d.after} tokens`;
     case "done":
-      return d.answer ?? d.reason;
+      return d.answer ?? `${d.reason}${d.last_action ? `. Last action: ${d.last_action}` : ""}`;
     default:
       return d.message ?? e.type;
   }
@@ -74,6 +91,7 @@ export function summarize(e: HarnessEvent): string {
 function stageOf(e: HarnessEvent): Stage | undefined {
   if (e.agent !== "main") return "helper";
   if (e.type === "hook_ran") return e.data.phase === "before" ? "hooksBefore" : "hooksAfter";
+  if (e.type === "loop_detected") return "tools";
   return (
     {
       run_started: "agent",
@@ -82,6 +100,8 @@ function stageOf(e: HarnessEvent): Stage | undefined {
       compaction_started: "agent",
       compaction_done: "agent",
       model_replied: "agent",
+      retry: "agent",
+      chaos: "agent",
       subagent_started: "helper",
       gate_checked: "gate",
       approval_requested: "gate",
@@ -98,6 +118,9 @@ function activityOf(e?: HarnessEvent): string {
   }
   return (
     {
+      retry: d.kind === "model_error" ? "Model failed, retrying" : "Fixing broken arguments",
+      chaos: "Something was broken on purpose",
+      loop_detected: "Stuck in a loop",
       hook_ran: `Checking the ${d.phase} hook`,
       gate_checked: "At the gate",
       approval_requested: "Waiting for you",
@@ -113,6 +136,27 @@ const latestUsage = (events: HarnessEvent[], main: boolean) =>
   [...events].reverse().find((e) => e.type === "context_updated" && (e.agent === "main") === main)?.data as
     | Usage
     | undefined;
+
+function statsOf(events: HarnessEvent[]): string {
+  if (!events.length) return "";
+  let tokens = 0;
+  let cached = 0;
+  let calls = 0;
+  for (const e of events) {
+    const u = e.type === "model_replied" || e.type === "compaction_done" ? e.data.usage : undefined;
+    if (u) {
+      tokens += u.prompt + u.completion;
+      cached += u.cached;
+    }
+    if (e.type === "model_replied") calls++;
+  }
+  const secs = events[events.length - 1].ts - events[0].ts;
+  return [
+    `${secs.toFixed(1)}s`,
+    `${tokens} tokens${cached ? ` (${cached} cached)` : ""}`,
+    `${calls} model call${calls === 1 ? "" : "s"}`,
+  ].join(" · ");
+}
 
 /** Everything the screen shows is computed from the events seen so far. That is what makes replay free. */
 export function derive(events: HarnessEvent[]): View {
@@ -142,8 +186,12 @@ export function derive(events: HarnessEvent[]): View {
   let tone: StageTone = "normal";
   if (last?.type === "hook_ran" && last.data.outcome === "blocked") tone = "bad";
   else if (pending && last?.type === "approval_requested") tone = "warn";
+  else if (last?.type === "retry" || last?.type === "chaos") tone = "warn";
+  else if (last?.type === "loop_detected") tone = "bad";
 
-  const answer = done ? (done.data.answer ?? `Stopped: ${done.data.reason}`) : undefined;
+  const answer = done
+    ? (done.data.answer ?? `Stopped: ${done.data.reason}${done.data.last_action ? `. Last action: ${done.data.last_action}` : ""}`)
+    : undefined;
 
   return {
     status,
@@ -160,6 +208,7 @@ export function derive(events: HarnessEvent[]): View {
     helper: events.some((e) => e.agent !== "main"),
     compacting: last?.type === "compaction_started" || last?.type === "compaction_done",
     written,
+    stats: statsOf(events),
   };
 }
 

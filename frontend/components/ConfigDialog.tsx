@@ -19,7 +19,7 @@ const TITLES: Record<Target, string> = {
 };
 
 const INTRO: Record<Target, string> = {
-  settings: "Limits for the next run.",
+  settings: "Limits, and a way to break things on purpose, for the next run.",
   agent: "The agent is the model. These limits shape what it can hold in mind.",
   hooksBefore: "Run before a tool call. They can block it, and the agent is told why.",
   gate: "Decides whether each tool call may run: automatically, after you approve, or never.",
@@ -136,30 +136,48 @@ export default function ConfigDialog({ target, onClose, options, setup, setSetup
     </div>
   );
 
+  const toggleChaos = (name: string) =>
+    setSetup({
+      ...setup,
+      chaos: setup.chaos.includes(name) ? setup.chaos.filter((c) => c !== name) : [...setup.chaos, name],
+    });
+
+  const number = (value: number, min: number, onChange: (n: number) => void, max?: number) => (
+    <input
+      type="number"
+      min={min}
+      max={max}
+      className={cx(field, "w-28")}
+      value={value}
+      onChange={(e) => onChange(Number(e.target.value))}
+    />
+  );
+
   const limits = (
     <div className="space-y-3">
       <Row label="Model">
         <span className="font-mono text-sm">{options?.models[0] ?? "backend not reachable"}</span>
       </Row>
-      <Row label="Context limit (tokens)">
-        <input
-          type="number"
-          min={300}
-          className={cx(field, "w-28")}
-          value={setup.context_limit}
-          onChange={(e) => setSetup({ ...setup, context_limit: Number(e.target.value) })}
-        />
-      </Row>
-      <Row label="Auto-compact at (%)">
-        <input
-          type="number"
-          min={10}
-          max={100}
-          className={cx(field, "w-28")}
-          value={setup.compact_at}
-          onChange={(e) => setSetup({ ...setup, compact_at: Number(e.target.value) })}
-        />
-      </Row>
+      <Row label="Context limit (tokens)">{number(setup.context_limit, 300, (n) => setSetup({ ...setup, context_limit: n }))}</Row>
+      <Row label="Auto-compact at (%)">{number(setup.compact_at, 10, (n) => setSetup({ ...setup, compact_at: n }), 100)}</Row>
+      <Row label="Step limit">{number(setup.max_steps, 1, (n) => setSetup({ ...setup, max_steps: n }))}</Row>
+      <Row label="Tool timeout (seconds)">{number(setup.tool_timeout, 1, (n) => setSetup({ ...setup, tool_timeout: n }))}</Row>
+
+      <div className="pt-2">
+        <h3 className="text-sm font-semibold">Break it on purpose</h3>
+        <p className="mb-2 text-xs text-mute">Inject a failure and watch the harness defend itself.</p>
+        <div className="space-y-2">
+          {options?.chaos.map((c) => (
+            <label key={c.name} className={cx(card, "flex cursor-pointer items-start gap-3")}>
+              <input type="checkbox" className="mt-1" checked={setup.chaos.includes(c.name)} onChange={() => toggleChaos(c.name)} />
+              <span>
+                <span className="font-mono text-sm font-medium">{c.name}</span>
+                <span className="block text-xs text-mute">{c.description}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </div>
     </div>
   );
 

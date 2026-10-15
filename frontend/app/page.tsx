@@ -80,6 +80,7 @@ export default function Home() {
         onMode={playback.setMode}
         onSettings={() => setTarget("settings")}
         status={view.status}
+        stats={view.stats}
       />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-[320px_minmax(0,1fr)]">

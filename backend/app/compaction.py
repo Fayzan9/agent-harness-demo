@@ -23,7 +23,8 @@ def transcript(summary: str, messages: list[dict]) -> str:
     return "\n".join(lines)
 
 
-async def summarize(model: str, summary: str, messages: list[dict]) -> str:
+async def summarize(model: str, summary: str, messages: list[dict]) -> tuple[str, dict]:
+    """Returns the summary and the token usage of the call that wrote it."""
     prompt = [{"role": "system", "content": PROMPT}, {"role": "user", "content": transcript(summary, messages)}]
     resp = await llm.complete(model, prompt, None)
-    return resp.choices[0].message.content or ""
+    return resp.choices[0].message.content or "", llm.usage_of(resp)

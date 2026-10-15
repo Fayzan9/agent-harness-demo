@@ -18,9 +18,10 @@ type Props = {
   onMode: (m: "auto" | "step") => void;
   onSettings: () => void;
   status: Status;
+  stats: string;
 };
 
-export default function TopBar({ scenarios, scenarioId, onScenario, mode, onMode, onSettings, status }: Props) {
+export default function TopBar({ scenarios, scenarioId, onScenario, mode, onMode, onSettings, status, stats }: Props) {
   const current = scenarios.find((s) => s.id === scenarioId);
   return (
     <header className="flex flex-wrap items-center gap-3">
@@ -33,10 +34,16 @@ export default function TopBar({ scenarios, scenarioId, onScenario, mode, onMode
           className="rounded-lg border border-line bg-panel px-3 py-1.5 text-sm font-medium outline-none focus:border-accent"
           aria-label="Scenario"
         >
-          {scenarios.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.label}
-            </option>
+          {(["Lessons", "Break it"] as const).map((g) => (
+            <optgroup key={g} label={g}>
+              {scenarios
+                .filter((s) => s.group === g)
+                .map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+            </optgroup>
           ))}
           {scenarioId === CUSTOM_ID && <option value={CUSTOM_ID}>Custom setup</option>}
         </select>
@@ -55,7 +62,8 @@ export default function TopBar({ scenarios, scenarioId, onScenario, mode, onMode
       </div>
 
       <Button onClick={onSettings}>Settings</Button>
-      <div className="ml-auto">
+      <div className="ml-auto flex items-center gap-3">
+        {stats && <span className="text-xs tabular-nums text-mute">{stats}</span>}
         <Chip tone={STATUS[status].tone}>{STATUS[status].label}</Chip>
       </div>
 
