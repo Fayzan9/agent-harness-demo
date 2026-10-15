@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import AskPanel from "@/components/AskPanel";
 import ConfigDialog, { type Target } from "@/components/ConfigDialog";
+import EvalsView from "@/components/EvalsView";
 import HistoryDialog from "@/components/HistoryDialog";
 import InspectPanel, { type Tab } from "@/components/InspectPanel";
 import ReplayBar from "@/components/ReplayBar";
@@ -11,7 +12,7 @@ import WatchPanel from "@/components/WatchPanel";
 import { approve, getOptions, getSession, getSessions, getWorkspace, resetWorkspace } from "@/lib/api";
 import { derive } from "@/lib/derive";
 import { CUSTOM_ID, SCENARIOS } from "@/lib/scenarios";
-import type { Options, SessionSummary, Setup, WorkspaceFile } from "@/lib/types";
+import type { HarnessEvent, Options, SessionSummary, Setup, WorkspaceFile } from "@/lib/types";
 import { usePlayback } from "@/lib/usePlayback";
 import { useSession } from "@/lib/useSession";
 
@@ -28,6 +29,7 @@ export default function Home() {
   const [target, setTarget] = useState<Target | null>(null);
   const [decided, setDecided] = useState<Record<string, boolean>>({});
   const [picked, setPicked] = useState<number | null>(null); // null means follow the newest turn
+  const [screen, setScreen] = useState<"play" | "evals">("play");
 
   const chat = useSession();
   const selected = picked ?? Math.max(chat.turns.length - 1, 0);
@@ -115,6 +117,15 @@ export default function Home() {
     approve(callId, allow);
   };
 
+  const replayEvalRun = (task: string, runEvents: HarnessEvent[]) => {
+    chat.loadEvents(task, runEvents);
+    setPicked(null);
+    setDecided({});
+    playback.setMode("auto");
+    setTab("events");
+    setScreen("play");
+  };
+
   const selectTurn = (i: number) => {
     setPicked(i);
     playback.setMode("auto");
@@ -135,62 +146,71 @@ export default function Home() {
         onMode={playback.setMode}
         onSettings={() => setTarget("settings")}
         onHistory={() => setHistoryOpen(true)}
+        view={screen}
+        onView={setScreen}
         status={view.status}
         stats={view.stats}
       />
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-[320px_minmax(0,1fr)]">
-        <AskPanel
-          turns={chat.turns}
-          selected={selected}
-          onSelect={selectTurn}
+      <div className={screen === "play" ? "contents" : "hidden"}>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-[320px_minmax(0,1fr)]">
+          <AskPanel
+            turns={chat.turns}
+            selected={selected}
+            onSelect={selectTurn}
+            view={view}
+            input={input}
+            setInput={setInput}
+            running={chat.running}
+            decided={decided}
+            stepHint={events.length > 0 && playback.shown === 0}
+            interrupted={interrupted}
+            onSend={send}
+            onStop={chat.stop}
+            onDecide={decide}
+            onResume={resume}
+            onNewChat={newChat}
+          />
+          <WatchPanel
+            view={view}
+            threshold={setup.compact_at}
+            running={live}
+            compactQueued={chat.compactQueued}
+            onCompact={chat.compact}
+            onStage={setTarget}
+            onSegment={pickSegment}
+          />
+        </div>
+
+        <InspectPanel
+          tab={tab}
+          setTab={setTab}
+          events={viewed}
           view={view}
-          input={input}
-          setInput={setInput}
-          running={chat.running}
-          decided={decided}
-          stepHint={events.length > 0 && playback.shown === 0}
-          interrupted={interrupted}
-          onSend={send}
-          onStop={chat.stop}
-          onDecide={decide}
-          onResume={resume}
-          onNewChat={newChat}
+          memory={setup.memory}
+          setMemory={(memory) => changeSetup({ ...setup, memory })}
+          files={files}
+          focusPart={focusPart}
+          canBranch={!chat.running && !!turn?.runId}
+          onBranch={rerunFrom}
         />
-        <WatchPanel
-          view={view}
-          threshold={setup.compact_at}
-          running={live}
-          compactQueued={chat.compactQueued}
-          onCompact={chat.compact}
-          onStage={setTarget}
-          onSegment={pickSegment}
+
+        <ReplayBar
+          shown={playback.shown}
+          total={events.length}
+          mode={playback.mode}
+          playing={playback.playing}
+          onBack={playback.back}
+          onNext={playback.next}
+          onPlay={playback.togglePlay}
+          onScrub={playback.scrub}
         />
+
       </div>
 
-      <InspectPanel
-        tab={tab}
-        setTab={setTab}
-        events={viewed}
-        view={view}
-        memory={setup.memory}
-        setMemory={(memory) => changeSetup({ ...setup, memory })}
-        files={files}
-        focusPart={focusPart}
-        canBranch={!chat.running && !!turn?.runId}
-        onBranch={rerunFrom}
-      />
-
-      <ReplayBar
-        shown={playback.shown}
-        total={events.length}
-        mode={playback.mode}
-        playing={playback.playing}
-        onBack={playback.back}
-        onNext={playback.next}
-        onPlay={playback.togglePlay}
-        onScrub={playback.scrub}
-      />
+      <div className={screen === "evals" ? "" : "hidden"}>
+        <EvalsView onReplay={replayEvalRun} />
+      </div>
 
       <ConfigDialog target={target} onClose={() => setTarget(null)} options={options} setup={setup} setSetup={changeSetup} />
       <HistoryDialog

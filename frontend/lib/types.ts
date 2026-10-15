@@ -81,3 +81,25 @@ export type RunConfig = {
   tool_timeout: number;
   chaos: string[];
 };
+
+export type EvalKind = "outcome" | "trajectory" | "judge";
+
+export type EvalCase = { id: string; label: string; task: string; checks: { kind: EvalKind; label: string }[] };
+
+export type EvalVariant = { id: string; label: string; description: string };
+
+export type EvalOptions = { cases: EvalCase[]; variants: EvalVariant[] };
+
+export type EvalRun = {
+  case: string;
+  variant: string;
+  index: number;
+  passed: boolean;
+  checks: { kind: EvalKind; label: string; passed: boolean; detail: string }[];
+  seconds: number;
+  tokens: number;
+  answer: string;
+  events: HarnessEvent[];
+};
+
+export type EvalStream = { type: "plan"; total: number } | ({ type: "run_done" } & EvalRun) | { type: "done" };

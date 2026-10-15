@@ -18,22 +18,28 @@ class Context:
     def __init__(self, memory: str = ""):
         self.memory = memory
         self.summary = ""  # replaces old messages after compaction
+        self.anchor: dict | None = None  # the latest user request, kept word for word through compaction
         self.messages: list[dict] = []
 
     def add(self, message: dict):
         self.messages.append(message)
 
     def compact(self, summary: str):
+        """Swap the old turns for a summary, but keep the latest request word for word.
+        A summary can quietly lose what the user actually asked for (an eval caught exactly that)."""
+        latest = next((m for m in reversed(self.messages) if m["role"] == "user"), self.anchor)
+        self.anchor = latest
         self.summary = summary
         self.messages = []
 
     def to_dict(self) -> dict:
-        return {"memory": self.memory, "summary": self.summary, "messages": self.messages}
+        return {"memory": self.memory, "summary": self.summary, "anchor": self.anchor, "messages": self.messages}
 
     @classmethod
     def from_dict(cls, data: dict) -> "Context":
         ctx = cls(data.get("memory", ""))
         ctx.summary = data.get("summary", "")
+        ctx.anchor = data.get("anchor")
         ctx.messages = data.get("messages", [])
         return ctx
 
@@ -41,11 +47,14 @@ class Context:
         return SYSTEM + (f"\n\nMemory file:\n{self.memory}" if self.memory else "")
 
     def as_messages(self) -> list[dict]:
-        recap = []
+        kept = [self.anchor] if self.anchor else []
         if self.summary:
-            text = f"Summary of the work so far:\n{self.summary}\n\nContinue the task from here."
-            recap = [{"role": "user", "content": text}]
-        return [{"role": "system", "content": self.system_prompt()}, *recap, *self.messages]
+            text = (
+                f"Progress notes so far:\n{self.summary}\n\n"
+                "The request above is still the task. Continue from here and do not repeat steps that are already done."
+            )
+            kept.append({"role": "user", "content": text})
+        return [{"role": "system", "content": self.system_prompt()}, *kept, *self.messages]
 
     def usage(self, tool_schemas: list[dict], limit: int) -> dict:
         parts = {
@@ -53,7 +62,7 @@ class Context:
             "tools": tokens(tool_schemas) if tool_schemas else 0,
             "memory": tokens(self.memory),
             "summary": tokens(self.summary),
-            "chat": sum(tokens(m) for m in self.messages if m["role"] != "tool"),
+            "chat": sum(tokens(m) for m in self.messages if m["role"] != "tool") + (tokens(self.anchor) if self.anchor else 0),
             "tool_results": sum(tokens(m) for m in self.messages if m["role"] == "tool"),
         }
         return {"limit": limit, "total": sum(parts.values()), "parts": parts}

@@ -38,4 +38,16 @@ Neither needs an API key. Run from `backend/`:
 ```bash
 PYTHONPATH=. uv run python tests/test_reliability.py
 PYTHONPATH=. uv run python tests/test_sessions.py
+PYTHONPATH=. uv run python tests/test_evals.py
 ```
+
+## Evals
+
+The **Evals** screen (top bar) runs the same tasks several times and checks each run automatically, so you can change one thing and compare the score.
+
+- **Cases and checks are data:** `backend/app/evals/cases.json`. Add a case by adding an entry. Checks are `outcome` (is the result right), `trajectory` (did it get there the right way) or `judge` (a model grades it against a rubric). The check types are in `backend/app/evals/checks.py`.
+- **Setups** (top of `backend/app/evals/runner.py`) are overrides applied to every case: without hooks, without the memory file, a step limit of 2, a tiny context, a flaky API.
+- Every run gets its own temporary workspace, so runs never interfere and your real `workspace/` is untouched. Evals run without a human, so never use an "ask" gate in a case.
+- Runs cost real model calls (about three per run, plus one for each judge check). Above 12 runs the Run button asks for a second click, and one click is capped at 90 runs.
+- Click a dot in the grid to see which checks failed, then **Replay this run** to step through it in the Playground.
+- Results are also saved to `backend/evals_out/` (gitignored).

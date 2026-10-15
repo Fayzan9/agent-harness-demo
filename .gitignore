@@ -6,3 +6,4 @@ node_modules/
 .DS_Store
 backend/runs/
 backend/sessions/
+backend/evals_out/

@@ -185,6 +185,23 @@ async def main():
     final = sessions.load(s.id).ctx.messages
     check("new message after interruption: history stays valid", valid_history(final) and any("Not run" in str(m.get("content")) for m in final if m["role"] == "tool"))
 
+    # 4b. compaction keeps the latest user request verbatim, whatever the summary says
+    from app.context import Context
+
+    ctx = Context("")
+    for m in [
+        {"role": "user", "content": "old question"},
+        {"role": "assistant", "content": "old answer"},
+        {"role": "user", "content": "write the summary to summary.txt"},
+        {"role": "assistant", "content": None, "tool_calls": [{"id": "x", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}]},
+        {"role": "tool", "tool_call_id": "x", "content": "data"},
+    ]:
+        ctx.add(m)
+    ctx.compact("a summary that forgot the task")
+    kept = [m["content"] for m in ctx.as_messages() if m["role"] == "user"]
+    check("compaction keeps the latest request verbatim, before the notes", ctx.anchor["content"] == "write the summary to summary.txt" and kept[0] == "write the summary to summary.txt" and kept[1].startswith("Progress notes"), kept)
+    check("compaction leaves no dangling tool calls", valid_history(ctx.as_messages()))
+
     # 5. over HTTP: list, detail, branch
     script([resp(calls=[NOTE]), resp("http answer"), resp("branched answer")])
     client = TestClient(app)

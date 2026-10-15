@@ -105,6 +105,7 @@ async def agent_loop(
     seen: Counter = Counter()  # identical tool calls so far, for loop detection
     bad_turns = 0  # consecutive turns where the model sent broken arguments
     last_action = ""
+    just_compacted = False  # compacting on two passes in a row only makes the agent redo its work
 
     if pending_calls:  # finish the step that a crash or a Stop cut short
         try:
@@ -117,7 +118,11 @@ async def agent_loop(
 
     for step in range(1, cfg.max_steps + 1):
         reason = _compact_reason(ctx, cfg, schemas, compact_requested())
+        if reason == "auto" and just_compacted:
+            reason = None
+        just_compacted = False
         if reason and len(ctx.messages) >= 3:  # nothing worth summarizing before that
+            just_compacted = True
             try:
                 async for event in _compact(ctx, cfg, schemas, reason, step):
                     yield event

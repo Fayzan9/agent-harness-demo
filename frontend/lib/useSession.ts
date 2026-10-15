@@ -60,6 +60,12 @@ export function useSession() {
     setTurns(detail.turns.map((t) => ({ runId: t.run_id, task: t.task, events: t.events })));
   }, []);
 
+  /** Show a run that did not come from a chat, such as an eval run, as a single turn. */
+  const loadEvents = useCallback((task: string, events: HarnessEvent[]) => {
+    setSessionId(null);
+    setTurns([{ runId: "", task, events }]);
+  }, []);
+
   const newChat = useCallback(() => {
     setSessionId(null);
     setTurns([]);
@@ -76,5 +82,5 @@ export function useSession() {
     requestCompact(last.runId);
   }, [last]);
 
-  return { sessionId, turns, running, start, resume, branch, load, newChat, stop, compact, compactQueued };
+  return { sessionId, turns, running, start, resume, branch, load, loadEvents, newChat, stop, compact, compactQueued };
 }

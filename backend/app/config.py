@@ -1,8 +1,11 @@
+from contextvars import ContextVar
 from pathlib import Path
 
 from pydantic import BaseModel
 
 WORKSPACE = Path(__file__).resolve().parents[2] / "workspace"
+# Which folder the file tools use. Evals give every run its own temporary folder so runs cannot interfere.
+workspace_var: ContextVar[Path] = ContextVar("workspace", default=WORKSPACE)
 GATE_MODES = ["auto", "ask", "block"]
 
 

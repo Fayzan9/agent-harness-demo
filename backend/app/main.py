@@ -13,11 +13,13 @@ from . import hooks, llm, runs, sessions, tools, workspace
 from .chaos import KINDS as CHAOS_KINDS
 from .config import GATE_MODES, RunConfig
 from .controls import Controls
+from .evals.api import router as evals_router
 from .gates import Approvals
 from .loop import run
 
 app = FastAPI(title="Agent harness playground")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000"], allow_methods=["*"], allow_headers=["*"])
+app.include_router(evals_router)
 approvals = Approvals()
 controls = Controls()
 

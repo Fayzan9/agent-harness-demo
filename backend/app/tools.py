@@ -2,7 +2,7 @@ import inspect
 from dataclasses import dataclass
 from typing import Callable
 
-from .config import WORKSPACE
+from .config import workspace_var
 
 _JSON_TYPES = {str: "string", int: "integer", float: "number", bool: "boolean"}
 
@@ -38,8 +38,9 @@ def schemas(names: list[str]) -> list[dict]:
 
 
 def _safe(path: str):
-    full = (WORKSPACE / path).resolve()
-    if not full.is_relative_to(WORKSPACE.resolve()):
+    root = workspace_var.get().resolve()
+    full = (root / path).resolve()
+    if not full.is_relative_to(root):
         raise ValueError("Path is outside the workspace")
     return full
 
@@ -47,7 +48,7 @@ def _safe(path: str):
 @tool
 def list_files() -> str:
     """List the files in the workspace folder."""
-    return "\n".join(p.name for p in sorted(WORKSPACE.iterdir())) or "(empty)"
+    return "\n".join(p.name for p in sorted(workspace_var.get().iterdir())) or "(empty)"
 
 
 @tool

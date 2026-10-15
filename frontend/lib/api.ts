@@ -1,4 +1,13 @@
-import type { HarnessEvent, Options, RunConfig, SessionDetail, SessionSummary, WorkspaceFile } from "./types";
+import type {
+  EvalOptions,
+  EvalStream,
+  HarnessEvent,
+  Options,
+  RunConfig,
+  SessionDetail,
+  SessionSummary,
+  WorkspaceFile,
+} from "./types";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const JSON_HEADERS = { "Content-Type": "application/json" };
@@ -30,7 +39,7 @@ export const getSessions = (): Promise<SessionSummary[]> => fetch(`${API}/sessio
 export const getSession = (id: string): Promise<SessionDetail> => fetch(`${API}/sessions/${id}`).then((r) => r.json());
 
 /** Reads the server-sent event stream from a POST endpoint, one event at a time. */
-async function* streamPost(path: string, body: unknown, signal: AbortSignal): AsyncGenerator<HarnessEvent> {
+async function* streamPost<T = HarnessEvent>(path: string, body: unknown, signal: AbortSignal): AsyncGenerator<T> {
   const res = await fetch(`${API}${path}`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body), signal });
   if (!res.ok || !res.body) {
     const detail = await res.json().then((d) => d.detail).catch(() => undefined);
@@ -61,3 +70,8 @@ export const streamResume = (sessionId: string, cfg: RunConfig, signal: AbortSig
 
 export const streamBranch = (runId: string, eventIndex: number, cfg: RunConfig, signal: AbortSignal) =>
   streamPost("/branch", { ...cfg, run_id: runId, event_index: eventIndex }, signal);
+
+export const getEvalOptions = (): Promise<EvalOptions> => fetch(`${API}/evals/options`).then((r) => r.json());
+
+export const streamEvals = (body: { cases: string[]; variants: string[]; runs: number }, signal: AbortSignal) =>
+  streamPost<EvalStream>("/evals/run", body, signal);
