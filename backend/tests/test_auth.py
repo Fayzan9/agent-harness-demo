@@ -17,8 +17,6 @@ import app.main as main_module
 from app.main import app
 from app.settings import Settings
 
-sessions.SESSIONS_DIR = Path(tempfile.mkdtemp())
-runs.RUNS_DIR = Path(tempfile.mkdtemp())
 
 AUD, ISS = "my-client-id", "https://accounts.google.com"
 KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)  # plays the part of Google's signing key
@@ -83,6 +81,7 @@ alice, bob = h(token(sub="alice", email="alice@corp.test")), h(token(sub="bob", 
 mine = sessions.create("", "alice's chat", "alice")
 mine.turns.append({"run_id": "run-a", "task": "x"})
 mine.save()
+runs.register("run-a", mine.id, "alice")
 check("owner sees their chat in the list", [s["id"] for s in client.get("/sessions", headers=alice).json()] == [mine.id])
 check("another user's list is empty", client.get("/sessions", headers=bob).json() == [])
 check("owner can open it", client.get(f"/sessions/{mine.id}", headers=alice).status_code == 200)

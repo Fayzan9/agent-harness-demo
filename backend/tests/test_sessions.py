@@ -20,8 +20,6 @@ from app.gates import Approvals
 from app.loop import run
 from app.main import app
 
-sessions.SESSIONS_DIR = Path(tempfile.mkdtemp())
-runs.RUNS_DIR = Path(tempfile.mkdtemp())
 
 seen_messages: list[list[dict]] = []
 

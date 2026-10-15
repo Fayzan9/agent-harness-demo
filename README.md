@@ -9,8 +9,9 @@ A visual playground that shows how an agent harness works: the loop, tools, gate
 ## Run
 
 1. `cp backend/.env.example backend/.env` and fill in your Azure values. The app checks them at startup and refuses to start if one is missing (see `backend/app/settings.py`).
-2. Backend: `cd backend && uv run uvicorn app.main:app --port 8000`
-3. Frontend: `cd frontend && npm run dev`, then open http://localhost:3000
+2. Create the tables (once, and again after pulling new migrations): `cd backend && uv run alembic upgrade head`
+3. Backend: `uv run uvicorn app.main:app --port 8000` (it refuses to start if step 2 was skipped)
+4. Frontend: `cd frontend && npm run dev`, then open http://localhost:3000
 
 ## The screen
 
@@ -42,6 +43,7 @@ PYTHONPATH=. uv run python tests/test_evals.py
 PYTHONPATH=. uv run python tests/test_context_tools.py
 PYTHONPATH=. uv run python tests/test_settings.py
 PYTHONPATH=. uv run python tests/test_auth.py
+PYTHONPATH=. uv run python tests/test_db.py
 ```
 
 ## Evals
@@ -74,3 +76,9 @@ Two things the numbers taught while building this:
 
 Off by default (everyone is one local user). To turn on Google sign-in, set `AUTH_MODE=jwt`, `AUTH_AUDIENCE` (your Google OAuth client id) and `ALLOWED_EMAILS` in `backend/.env`.
 The browser gets a signed token from Google; the API only verifies it (`backend/app/auth.py`) and checks the email against the allowlist. Each chat belongs to the user who made it. In staging or production the app refuses to start with login off.
+
+## Database
+
+Chats, runs and events live in a database (`backend/app/db.py`): SQLite file by default, Postgres in staging/production (`DATABASE_URL`).
+Tables come from migrations in `backend/alembic/versions`; add one with `uv run alembic revision -m "what changed"`.
+`docker-compose.yml` has a Postgres service (`docker compose up -d db`). To run the tests on Postgres, create a database whose name ends in `_test` and set `TEST_DATABASE_URL` (the tests wipe it).

@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     # Browser origins allowed to call the API. A JSON list in the env var: CORS_ORIGINS='["https://app.example.com"]'
     cors_origins: list[str] = ["http://localhost:3000"]
 
+    # Where chats and runs are kept. The default is a local SQLite file so the demo needs nothing installed.
+    # Staging and production must use Postgres. The url holds a password, so it is a SecretStr.
+    # Example: postgresql+psycopg://user:password@host:5432/dbname
+    database_url: SecretStr = SecretStr("sqlite:///data/harness.db")
+
     # Login. "off" = everyone is one local user (demo on a laptop). "jwt" = callers must send a signed token.
     # Defaults describe Google sign-in; Cognito, Okta etc. only need different values here.
     auth_mode: Literal["off", "jwt"] = "off"
@@ -39,6 +44,8 @@ class Settings(BaseSettings):
     def _safe_for_where_it_runs(self):
         if self.environment != "local" and self.auth_mode == "off":
             raise ValueError("AUTH_MODE=off is only allowed when ENVIRONMENT=local")
+        if self.environment != "local" and not self.database_url.get_secret_value().startswith("postgresql"):
+            raise ValueError("DATABASE_URL must be a Postgres url unless ENVIRONMENT=local")
         if self.auth_mode == "jwt" and not (self.auth_audience and self.allowed_emails):
             raise ValueError("AUTH_MODE=jwt needs AUTH_AUDIENCE and a non-empty ALLOWED_EMAILS (an empty list would let nobody in)")
         return self

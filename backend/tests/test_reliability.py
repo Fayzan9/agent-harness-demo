@@ -3,6 +3,7 @@
 Run from backend/:  PYTHONPATH=. uv run python tests/test_reliability.py
 """
 import asyncio
+import fakeenv  # noqa: F401  (must come before the app is imported)
 import json
 import time
 from types import SimpleNamespace as NS
@@ -36,7 +37,6 @@ def script(items):
     llm.complete = fake
 
 
-sessions.SESSIONS_DIR = Path(tempfile.mkdtemp())
 
 
 async def collect(**kw):

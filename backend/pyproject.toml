@@ -3,9 +3,12 @@ name = "backend"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.20.0",
     "fastapi>=0.143.1",
     "litellm>=1.105.1",
+    "psycopg[binary]>=3.3.6",
     "pydantic-settings>=2.16.0",
     "pyjwt[crypto]>=2.15.1",
+    "sqlalchemy>=2",
     "uvicorn[standard]>=0.54.0",
 ]

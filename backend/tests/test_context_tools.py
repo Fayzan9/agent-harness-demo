@@ -4,6 +4,7 @@ Run from backend/:  PYTHONPATH=. uv run python tests/test_context_tools.py
 """
 
 import asyncio
+import fakeenv  # noqa: F401  (must come before the app is imported)
 import json
 import tempfile
 import time
@@ -19,7 +20,6 @@ from app.evals.runner import CASES, VARIANTS, run_one
 from app.gates import Approvals
 from app.loop import run
 
-sessions.SESSIONS_DIR = Path(tempfile.mkdtemp())
 results = []
 
 

@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from . import hooks, llm, runs, sessions, tools, workspace
+from . import db, hooks, llm, runs, sessions, tools, workspace
 from .auth import CurrentUser, User
 from .chaos import KINDS as CHAOS_KINDS
 from .config import GATE_MODES, RunConfig
@@ -16,6 +16,7 @@ from .loop import run
 from .settings import get_settings
 
 settings = get_settings()  # fail fast: a missing or wrong setting stops the app here, not in the middle of a run
+db.check_schema()  # fail fast: refuse to run on a database that has not been migrated
 
 app = FastAPI(title="Agent harness playground")
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["*"], allow_headers=["*"])
@@ -88,6 +89,8 @@ def _stream(cfg: RunConfig, session: sessions.Session, task: str = "", *, resume
     cfg.model = cfg.model or llm.default_model()
     run_id = uuid.uuid4().hex[:8]
     run_owner[run_id] = session.owner
+    session.save()  # the chat must exist before a run can point at it
+    runs.register(run_id, session.id, session.owner)
 
     async def stream():
         try:

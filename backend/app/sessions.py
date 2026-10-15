@@ -1,12 +1,11 @@
-import json
-import os
 import time
 import uuid
-from pathlib import Path
 
+from sqlalchemy import insert, select, update
+
+from . import db
 from .context import Context
 
-SESSIONS_DIR = Path(__file__).resolve().parents[1] / "sessions"
 LOCAL_USER = "local-user"  # the one user when login is off
 ACTIVE: set[str] = set()  # sessions with a run in progress right now, in this process
 
@@ -29,12 +28,21 @@ class Session:
 
     # -- saving -----------------------------------------------------------------
     def save(self):
+        """Write the whole chat to the database (a row per chat). Also what the History list reads."""
         self.updated = time.time()
-        SESSIONS_DIR.mkdir(exist_ok=True)
-        path = SESSIONS_DIR / f"{self.id}.json"
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self.to_dict()))
-        os.replace(tmp, path)  # all or nothing, so a crash mid-write cannot leave half a file
+        values = {
+            "owner": self.owner,
+            "title": self.title,
+            "status": self.status,
+            "created": self.created,
+            "updated": self.updated,
+            "turn_count": len(self.turns),
+            "resume_point": self.resume_point(),
+            "data": self.to_dict(),
+        }
+        with db.get_engine().begin() as conn:  # one transaction: all of it is saved, or none
+            if conn.execute(update(db.sessions).where(db.sessions.c.id == self.id).values(**values)).rowcount == 0:
+                conn.execute(insert(db.sessions).values(id=self.id, **values))
 
     def to_dict(self) -> dict:
         return {
@@ -92,7 +100,11 @@ class Session:
         self.save()
 
     def interrupted_at(self) -> dict | None:
-        if self.status != "interrupted" or not (self.in_flight or self.pending_calls):
+        return self.resume_point() if self.status == "interrupted" else None
+
+    def resume_point(self) -> dict | None:
+        """What was happening to a tool call, if anything. Only meaningful once the chat is interrupted."""
+        if not (self.in_flight or self.pending_calls):
             return None
         if self.in_flight:
             return {"tool": self.in_flight["tool"], "state": self.in_flight["state"]}
@@ -105,44 +117,44 @@ def create(memory: str, title: str, owner: str = LOCAL_USER) -> Session:
 
 def load(session_id: str, owner: str | None = None) -> Session | None:
     """The chat, or None. With an owner, someone else's chat also gives None, so it looks like it does not exist."""
-    path = SESSIONS_DIR / f"{session_id}.json"
-    if not path.exists():
+    with db.get_engine().connect() as conn:
+        row = conn.execute(select(db.sessions.c.owner, db.sessions.c.data).where(db.sessions.c.id == session_id)).first()
+    if not row or (owner is not None and row.owner != owner):
         return None
-    s = Session.from_dict(json.loads(path.read_text()))
-    if owner is not None and s.owner != owner:
-        return None
+    s = Session.from_dict(row.data)
     if s.status == "running" and s.id not in ACTIVE:
         s.status = "interrupted"  # it said running, but nothing is running it: the process died
     return s
 
 
 def list_all(owner: str | None = None) -> list[dict]:
-    if not SESSIONS_DIR.exists():
-        return []
+    """Short rows for the History list. Reads columns only, never the big JSON of each chat."""
+    q = select(db.sessions).with_only_columns(
+        db.sessions.c.id, db.sessions.c.title, db.sessions.c.created, db.sessions.c.updated,
+        db.sessions.c.status, db.sessions.c.turn_count, db.sessions.c.resume_point,
+    ).order_by(db.sessions.c.updated.desc())
+    if owner is not None:
+        q = q.where(db.sessions.c.owner == owner)
+    with db.get_engine().connect() as conn:
+        rows = conn.execute(q).all()
     out = []
-    for path in SESSIONS_DIR.glob("*.json"):
-        s = load(path.stem, owner)
-        if s:
-            out.append(
-                {
-                    "id": s.id,
-                    "title": s.title,
-                    "created": s.created,
-                    "updated": s.updated,
-                    "status": s.status,
-                    "turns": len(s.turns),
-                    "interrupted_at": s.interrupted_at(),
-                }
-            )
-    return sorted(out, key=lambda x: x["updated"], reverse=True)
+    for r in rows:
+        status = "interrupted" if r.status == "running" and r.id not in ACTIVE else r.status
+        out.append(
+            {
+                "id": r.id,
+                "title": r.title,
+                "created": r.created,
+                "updated": r.updated,
+                "status": status,
+                "turns": r.turn_count,
+                "interrupted_at": r.resume_point if status == "interrupted" else None,
+            }
+        )
+    return out
 
 
 def owns_run(owner: str, run_id: str) -> bool:
-    """Did this user start this run? A run is listed in the turns of the chat it belongs to."""
-    if not SESSIONS_DIR.exists():
-        return False
-    for path in SESSIONS_DIR.glob("*.json"):
-        s = load(path.stem, owner)
-        if s and any(t.get("run_id") == run_id for t in s.turns):
-            return True
-    return False
+    """Did this user start this run? One indexed lookup."""
+    with db.get_engine().connect() as conn:
+        return conn.execute(select(db.runs.c.run_id).where(db.runs.c.run_id == run_id, db.runs.c.owner == owner)).first() is not None

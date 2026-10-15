@@ -54,3 +54,11 @@ Rule: user runs anything that needs AWS credentials; never paste keys in chat.
 - Known gaps for later steps: /workspace is still ONE shared folder (step 6); no rate limits/budgets per user (step 5); `owns_run` scans session files (database in step 3); token kept in sessionStorage.
 - Frontend: `lib/auth.ts`, `apiFetch` adds Bearer token and fires a signed-out event on 401, `components/AuthGate.tsx` (Google button, sign-out chip) wraps the layout.
 - Tests: `tests/test_auth.py` (36 checks incl. alg-swap, alg none, wrong audience/issuer, forged key, cross-user access). Verified in browser with login on (sign-in screen, bad stored token) and off (normal demo).
+
+### Production step 3: database
+- SQLAlchemy Core + Alembic + psycopg3. `app/db.py`: tables `sessions` (owner/title/status/created/updated/turn_count/resume_point columns + `data` JSON(B) for the big chat), `runs` (run_id -> session_id, owner), `events` (id order, `body` JSON). Migration `alembic/versions/0001_initial.py`. Engine from `DATABASE_URL` (SecretStr; default SQLite file `backend/data/harness.db`; non-local requires Postgres via settings validator).
+- App never creates tables: `db.check_schema()` at startup refuses an un-migrated DB ("Run: uv run alembic upgrade head"). `alembic/env.py` reuses the app engine.
+- `sessions.py` save (update-then-insert in a transaction), load(owner), list_all(owner) reads columns only, `owns_run` is one indexed lookup. `runs.py` register/append/load. `main._stream` saves the session then registers the run (Postgres FK).
+- Tests: `fakeenv.py` builds a fresh DB by running migrations; `TEST_DATABASE_URL` (must end `_test`) runs the same suites on Postgres; new `test_db.py`. All 7 suites pass on SQLite AND Postgres 16.
+- Proved on real Postgres in Docker (colima; docker compose plugin and docker-credential-desktop missing here, so used `docker run` with temp DOCKER_CONFIG; compose file written but untested): real model run stored, kill -9 + restart keeps the chat and 8 events.
+- Still in memory (step 11): approvals, ACTIVE set, run_owner. Old file data dirs (sessions/, runs/) are unused now; no import script (they were empty).
