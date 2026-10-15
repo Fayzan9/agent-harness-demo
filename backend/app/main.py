@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from . import hooks, llm, runs, sessions, tools, workspace
+from .auth import CurrentUser, User
 from .chaos import KINDS as CHAOS_KINDS
 from .config import GATE_MODES, RunConfig
 from .controls import Controls
@@ -18,9 +19,10 @@ settings = get_settings()  # fail fast: a missing or wrong setting stops the app
 
 app = FastAPI(title="Agent harness playground")
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["*"], allow_headers=["*"])
-app.include_router(evals_router)
+app.include_router(evals_router, dependencies=[CurrentUser])  # every eval route needs a signed-in user
 approvals = Approvals()
 controls = Controls()
+run_owner: dict[str, str] = {}  # run id -> user id, for runs in progress, so one user cannot steer another's run
 
 
 class CompactRequest(BaseModel):
@@ -32,7 +34,24 @@ class Decision(BaseModel):
     allow: bool
 
 
-@app.get("/options")
+@app.get("/health")
+def health():
+    """For the load balancer. Public, and says nothing about the app."""
+    return {"ok": True}
+
+
+@app.get("/auth/config")
+def auth_config():
+    """Public: what the sign-in screen needs. The client id is not a secret (it is in every Google button)."""
+    return {"mode": settings.auth_mode, "client_id": settings.auth_audience}
+
+
+@app.get("/auth/me")
+def me(user: User = CurrentUser):
+    return user
+
+
+@app.get("/options", dependencies=[CurrentUser])
 def options():
     """What the setup panel can offer."""
     return {
@@ -68,6 +87,7 @@ def _stream(cfg: RunConfig, session: sessions.Session, task: str = "", *, resume
     sessions.ACTIVE.add(session.id)
     cfg.model = cfg.model or llm.default_model()
     run_id = uuid.uuid4().hex[:8]
+    run_owner[run_id] = session.owner
 
     async def stream():
         try:
@@ -77,24 +97,25 @@ def _stream(cfg: RunConfig, session: sessions.Session, task: str = "", *, resume
         finally:
             sessions.ACTIVE.discard(session.id)
             controls.take_compact(run_id)  # drop any request the loop never got to
+            run_owner.pop(run_id, None)
 
     return StreamingResponse(stream(), media_type="text/event-stream")
 
 
 @app.post("/run")
-async def start_run(cfg: SessionRun):
+async def start_run(cfg: SessionRun, user: User = CurrentUser):
     """A new chat, or the next message of an existing one."""
-    session = sessions.load(cfg.session_id) if cfg.session_id else None
+    session = sessions.load(cfg.session_id, user.id) if cfg.session_id else None
     if cfg.session_id and not session:
         raise HTTPException(404, "No such chat.")
-    session = session or sessions.create(cfg.memory, cfg.task)
+    session = session or sessions.create(cfg.memory, cfg.task, user.id)
     return _stream(cfg, session, cfg.task)
 
 
 @app.post("/sessions/{session_id}/resume")
-async def resume_session(session_id: str, cfg: RunConfig):
+async def resume_session(session_id: str, cfg: RunConfig, user: User = CurrentUser):
     """Pick up a chat that stopped part-way, from its last checkpoint."""
-    session = sessions.load(session_id)
+    session = sessions.load(session_id, user.id)
     if not session:
         raise HTTPException(404, "No such chat.")
     if session.status != "interrupted":
@@ -103,26 +124,28 @@ async def resume_session(session_id: str, cfg: RunConfig):
 
 
 @app.post("/branch")
-async def branch(req: BranchRun):
+async def branch(req: BranchRun, user: User = CurrentUser):
     """Start a new chat from what the model saw at one point of an earlier run, with the current settings."""
+    if not sessions.owns_run(user.id, req.run_id):
+        raise HTTPException(404, "No such run.")
     events = runs.load(req.run_id)
     marks = [e for e in events[: req.event_index + 1] if e["type"] == "context_updated" and e["agent"] == "main"]
     if not marks:
         raise HTTPException(400, "Nothing to branch from at that point.")
     mark = marks[-1]
-    session = sessions.create(req.memory, f"Re-run from step {mark['step']}")
+    session = sessions.create(req.memory, f"Re-run from step {mark['step']}", user.id)
     session.ctx.messages = [m for m in mark["data"]["messages"] if m["role"] != "system"]
     return _stream(req, session, label=f"Re-run from step {mark['step']}")
 
 
 @app.get("/sessions")
-def list_sessions():
-    return sessions.list_all()
+def list_sessions(user: User = CurrentUser):
+    return sessions.list_all(user.id)
 
 
 @app.get("/sessions/{session_id}")
-def get_session(session_id: str):
-    session = sessions.load(session_id)
+def get_session(session_id: str, user: User = CurrentUser):
+    session = sessions.load(session_id, user.id)
     if not session:
         raise HTTPException(404, "No such chat.")
     return {
@@ -136,22 +159,24 @@ def get_session(session_id: str):
 
 
 @app.post("/compact")
-def compact(r: CompactRequest):
+def compact(r: CompactRequest, user: User = CurrentUser):
+    if run_owner.get(r.run_id) != user.id:
+        raise HTTPException(404, "No such run.")
     controls.request_compact(r.run_id)
     return {"queued": True}
 
 
-@app.get("/workspace")
+@app.get("/workspace", dependencies=[CurrentUser])
 def get_workspace():
     return workspace.snapshot()
 
 
-@app.post("/workspace/reset")
+@app.post("/workspace/reset", dependencies=[CurrentUser])
 def reset_workspace():
     workspace.reset()
     return {"ok": True}
 
 
 @app.post("/approve")
-def approve(d: Decision):
-    return {"resolved": approvals.resolve(d.call_id, d.allow)}
+def approve(d: Decision, user: User = CurrentUser):
+    return {"resolved": approvals.resolve(d.call_id, d.allow, owner=user.id)}

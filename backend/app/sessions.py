@@ -7,14 +7,16 @@ from pathlib import Path
 from .context import Context
 
 SESSIONS_DIR = Path(__file__).resolve().parents[1] / "sessions"
+LOCAL_USER = "local-user"  # the one user when login is off
 ACTIVE: set[str] = set()  # sessions with a run in progress right now, in this process
 
 
 class Session:
     """A conversation: the context plus enough bookkeeping to resume it after a crash."""
 
-    def __init__(self, id: str, memory: str = "", title: str = ""):
+    def __init__(self, id: str, memory: str = "", title: str = "", owner: str = LOCAL_USER):
         self.id = id
+        self.owner = owner  # the user id this chat belongs to; nobody else may see it
         self.title = title
         self.created = time.time()
         self.updated = self.created
@@ -37,6 +39,7 @@ class Session:
     def to_dict(self) -> dict:
         return {
             "id": self.id,
+            "owner": self.owner,
             "title": self.title,
             "created": self.created,
             "updated": self.updated,
@@ -50,7 +53,7 @@ class Session:
 
     @classmethod
     def from_dict(cls, data: dict) -> "Session":
-        s = cls(data["id"], title=data.get("title", ""))
+        s = cls(data["id"], title=data.get("title", ""), owner=data.get("owner", LOCAL_USER))
         s.created = data.get("created", s.created)
         s.updated = data.get("updated", s.updated)
         s.status = data.get("status", "idle")
@@ -96,26 +99,29 @@ class Session:
         return {"tool": self.pending_calls[0]["name"], "state": "not started"}
 
 
-def create(memory: str, title: str) -> Session:
-    return Session(uuid.uuid4().hex[:8], memory, title[:60])
+def create(memory: str, title: str, owner: str = LOCAL_USER) -> Session:
+    return Session(uuid.uuid4().hex[:8], memory, title[:60], owner)
 
 
-def load(session_id: str) -> Session | None:
+def load(session_id: str, owner: str | None = None) -> Session | None:
+    """The chat, or None. With an owner, someone else's chat also gives None, so it looks like it does not exist."""
     path = SESSIONS_DIR / f"{session_id}.json"
     if not path.exists():
         return None
     s = Session.from_dict(json.loads(path.read_text()))
+    if owner is not None and s.owner != owner:
+        return None
     if s.status == "running" and s.id not in ACTIVE:
         s.status = "interrupted"  # it said running, but nothing is running it: the process died
     return s
 
 
-def list_all() -> list[dict]:
+def list_all(owner: str | None = None) -> list[dict]:
     if not SESSIONS_DIR.exists():
         return []
     out = []
     for path in SESSIONS_DIR.glob("*.json"):
-        s = load(path.stem)
+        s = load(path.stem, owner)
         if s:
             out.append(
                 {
@@ -129,3 +135,14 @@ def list_all() -> list[dict]:
                 }
             )
     return sorted(out, key=lambda x: x["updated"], reverse=True)
+
+
+def owns_run(owner: str, run_id: str) -> bool:
+    """Did this user start this run? A run is listed in the turns of the chat it belongs to."""
+    if not SESSIONS_DIR.exists():
+        return False
+    for path in SESSIONS_DIR.glob("*.json"):
+        s = load(path.stem, owner)
+        if s and any(t.get("run_id") == run_id for t in s.turns):
+            return True
+    return False

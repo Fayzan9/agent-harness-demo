@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { JetBrains_Mono, Plus_Jakarta_Sans } from "next/font/google";
+import AuthGate from "@/components/AuthGate";
 import "./globals.css";
 
 const ui = Plus_Jakarta_Sans({ variable: "--font-ui", subsets: ["latin"] });
@@ -13,7 +14,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${ui.variable} ${code.variable} h-full`}>
-      <body className="min-h-full">{children}</body>
+      <body className="min-h-full">
+        <AuthGate>{children}</AuthGate>
+      </body>
     </html>
   );
 }

@@ -46,3 +46,11 @@ Rule: user runs anything that needs AWS credentials; never paste keys in chat.
 - `main.py` calls `get_settings()` at import (fail fast) and uses `cors_origins`; `llm.py` reads settings, unwraps the key in one place. python-dotenv removed from direct deps.
 - `tests/fakeenv.py` gives tests harmless env; `tests/test_settings.py` added (5 checks). All 5 suites pass.
 - Proved: start with only a key set -> clear "Field required" errors for base and model, key not printed.
+
+### Production step 2: login (Google, generic OIDC underneath)
+- Backend: `auth.py` verifies Google ID token (RS256 only, audience, issuer, exp required, JWKS keys), email_verified + `ALLOWED_EMAILS` allowlist (exact or "@domain"). 401 = who are you, 403 = not allowed. `AUTH_MODE=off` gives a fixed `local-user`.
+- Settings validator: non-local ENVIRONMENT with AUTH_MODE=off refuses to start; jwt needs AUTH_AUDIENCE and non-empty allowlist.
+- Ownership: `Session.owner` (old chats default to local-user); `sessions.load/list_all(owner)` return None for others (404, not 403); `owns_run` for /branch; `Approvals.wait/resolve` carry owner; `run_owner` map guards /compact. All routes need login except `/health`, `/auth/config`.
+- Known gaps for later steps: /workspace is still ONE shared folder (step 6); no rate limits/budgets per user (step 5); `owns_run` scans session files (database in step 3); token kept in sessionStorage.
+- Frontend: `lib/auth.ts`, `apiFetch` adds Bearer token and fires a signed-out event on 401, `components/AuthGate.tsx` (Google button, sign-out chip) wraps the layout.
+- Tests: `tests/test_auth.py` (36 checks incl. alg-swap, alg none, wrong audience/issuer, forged key, cross-user access). Verified in browser with login on (sign-in screen, bad stored token) and off (normal demo).

@@ -41,6 +41,7 @@ PYTHONPATH=. uv run python tests/test_sessions.py
 PYTHONPATH=. uv run python tests/test_evals.py
 PYTHONPATH=. uv run python tests/test_context_tools.py
 PYTHONPATH=. uv run python tests/test_settings.py
+PYTHONPATH=. uv run python tests/test_auth.py
 ```
 
 ## Evals
@@ -68,3 +69,8 @@ Two things the numbers taught while building this:
 
 - Whether the agent uses a cheaper tool depends on the tool descriptions. With a plain `read_file` description it never used `search_file`. Adding "a long file is expensive, use search_file first if you only need one fact" changed that every time. The eval case `find-in-big-file` measures it (compare Baseline with **Without search_file**).
 - Cache hits are best effort. On this provider the same prompt was sometimes cold and sometimes cached, and caching does not make the context smaller. It only makes re-reading it cheaper.
+
+## Login
+
+Off by default (everyone is one local user). To turn on Google sign-in, set `AUTH_MODE=jwt`, `AUTH_AUDIENCE` (your Google OAuth client id) and `ALLOWED_EMAILS` in `backend/.env`.
+The browser gets a signed token from Google; the API only verifies it (`backend/app/auth.py`) and checks the email against the allowlist. Each chat belongs to the user who made it. In staging or production the app refuses to start with login off.

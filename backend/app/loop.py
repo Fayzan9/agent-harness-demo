@@ -318,7 +318,7 @@ async def _execute(
                 step,
                 {"call_id": call["id"], "tool": name, "args": args, "maybe_ran": maybe_ran},
             )
-            allowed = await approvals.wait(call["id"])
+            allowed = await approvals.wait(call["id"], session.owner if session else "")
 
         if not allowed:
             result = "Denied: the gate did not allow this tool call"
