@@ -1,3 +1,4 @@
+import { buildTrace } from "./trace";
 import type { ChatMessage, HarnessEvent, Usage } from "./types";
 
 export type Stage = "agent" | "hooksBefore" | "gate" | "tools" | "hooksAfter" | "return" | "helper";
@@ -139,22 +140,13 @@ const latestUsage = (events: HarnessEvent[], main: boolean) =>
 
 function statsOf(events: HarnessEvent[]): string {
   if (!events.length) return "";
-  let tokens = 0;
-  let cached = 0;
-  let calls = 0;
-  for (const e of events) {
-    const u = e.type === "model_replied" || e.type === "compaction_done" ? e.data.usage : undefined;
-    if (u) {
-      tokens += u.prompt + u.completion;
-      cached += u.cached;
-    }
-    if (e.type === "model_replied") calls++;
-  }
-  const secs = events[events.length - 1].ts - events[0].ts;
+  const { total, stats } = buildTrace(events);
+  const tokens = stats.promptTokens + stats.completionTokens;
   return [
-    `${secs.toFixed(1)}s`,
-    `${tokens} tokens${cached ? ` (${cached} cached)` : ""}`,
-    `${calls} model call${calls === 1 ? "" : "s"}`,
+    `${total.toFixed(1)}s`,
+    `${tokens} tokens${stats.cachedTokens ? ` (${stats.cachedTokens} cached)` : ""}`,
+    `${stats.modelCalls} model call${stats.modelCalls === 1 ? "" : "s"}`,
+    ...(stats.waitYou >= 0.5 ? [`${stats.waitYou.toFixed(1)}s waiting for you`] : []),
   ].join(" · ");
 }
 

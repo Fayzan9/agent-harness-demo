@@ -4,11 +4,13 @@ import { useState } from "react";
 import { EVENT_COLOR, messageText, summarize, type View } from "@/lib/derive";
 import type { HarnessEvent, Usage, WorkspaceFile } from "@/lib/types";
 import { PARTS } from "./ContextBar";
+import TraceTab from "./TraceTab";
 import { Panel, cx } from "./ui";
 
-export type Tab = "events" | "context" | "memory" | "files";
+export type Tab = "events" | "trace" | "context" | "memory" | "files";
 const TABS: { id: Tab; label: string }[] = [
   { id: "events", label: "Events" },
+  { id: "trace", label: "Trace" },
   { id: "context", label: "Context" },
   { id: "memory", label: "Memory" },
   { id: "files", label: "Files" },
@@ -44,8 +46,9 @@ export default function InspectPanel({ tab, setTab, events, view, memory, setMem
         </div>
       }
     >
-      <div className="h-[460px] overflow-hidden md:h-[290px]">
+      <div className="h-[520px] overflow-hidden md:h-[370px]">
         {tab === "events" && <EventsTab events={events} />}
+        {tab === "trace" && <TraceTab events={events} />}
         {tab === "context" && <ContextTab view={view} focusPart={focusPart} />}
         {tab === "memory" && <MemoryTab memory={memory} setMemory={setMemory} />}
         {tab === "files" && <FilesTab files={files} written={view.written} />}

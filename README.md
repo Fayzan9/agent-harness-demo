@@ -19,7 +19,7 @@ A visual playground that shows how an agent harness works: the loop, tools, gate
 | Top bar | Scenario presets (one per lesson), Auto or Step mode, Settings, run status |
 | 1 Ask | Chat. Your task, the agent's answer, and Allow or Deny cards |
 | 2 Watch | Context bar, then the loop: Agent, before hooks, Gate, Tools, after hooks. A helper lane appears when `delegate` is used. Click any box to configure it |
-| 3 Inspect | Events, Context (exactly what the model was sent), Memory (editable), Files |
+| 3 Inspect | Events, Trace (timed waterfall, waits, tokens, cache), Context (exactly what the model was sent), Memory (editable), Files |
 | 4 Replay | Back, Next, Play and a scrubber. Every event is kept, so you can rewind a run |
 
 Every run first restores the demo files in `workspace/` (it never deletes anything).
