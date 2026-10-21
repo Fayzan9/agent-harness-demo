@@ -62,3 +62,9 @@ Rule: user runs anything that needs AWS credentials; never paste keys in chat.
 - Tests: `fakeenv.py` builds a fresh DB by running migrations; `TEST_DATABASE_URL` (must end `_test`) runs the same suites on Postgres; new `test_db.py`. All 7 suites pass on SQLite AND Postgres 16.
 - Proved on real Postgres in Docker (colima; docker compose plugin and docker-credential-desktop missing here, so used `docker run` with temp DOCKER_CONFIG; compose file written but untested): real model run stored, kill -9 + restart keeps the chat and 8 events.
 - Still in memory (step 11): approvals, ACTIVE set, run_owner. Old file data dirs (sessions/, runs/) are unused now; no import script (they were empty).
+
+## Content track: Medium article + YouTube video (started 2026-10-19, forked session, working tree .../Personal/Learn/agent harness)
+- User wants a clean, simple, naturally written Medium article with diagrams, and to record a YouTube video. I cannot record or publish; I prepare text, diagrams (SVG + PNG at 1600px), script, shot list, rehearse demos.
+- Plan in `content/outline.md` (same story for both; 7 diagrams; surprises section from real runs). Awaiting user approval of the outline before diagrams.
+- 2026-10-19: Outline approved by user. Diagrams in `content/diagrams/` (hand-written SVG; `render.sh name height` makes a 1600px PNG via qlmanage + sips crop). Style: white bg, Helvetica, blue=model, purple=hooks, amber=gates, teal=tools, grey=context, green=final answer. D1 model vs harness and D2 the loop DONE and shown. Remaining: D3 gate, D4 hooks, D5 context+compaction, D6 memory+helper, D7 cache prefix.
+- 2026-10-19: ALL SEVEN DIAGRAMS DRAWN in `content/diagrams/` (d1 model vs harness, d2 loop, d3 gates, d4 hooks, d5 context+compaction, d6 memory+helper, d7 cache prefix; svg + 1600px png). Shown to user. NEXT: write the article draft (`content/article.md`), then video script/shot list/YouTube listing, then rehearse demos.
