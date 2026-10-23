@@ -8,10 +8,32 @@ A visual playground that shows how an agent harness works: the loop, tools, gate
 
 ## Run
 
-1. `cp backend/.env.example backend/.env` and fill in your Azure values. The app checks them at startup and refuses to start if one is missing (see `backend/app/settings.py`).
+1. `cp backend/.env.example backend/.env`, then fill in one provider block (see [Choose a model provider](#choose-a-model-provider)). The app checks the values at startup and refuses to start if one is missing (see `backend/app/settings.py`).
 2. Create the tables (once, and again after pulling new migrations): `cd backend && uv run alembic upgrade head`
 3. Backend: `uv run uvicorn app.main:app --port 8000` (it refuses to start if step 2 was skipped)
 4. Frontend: `cd frontend && npm run dev`, then open http://localhost:3000
+
+## Choose a model provider
+
+Every model call goes through [LiteLLM](https://docs.litellm.ai/), so the playground works with more than one provider. Set these in `backend/.env`:
+
+| Provider | `LLM_PROVIDER` | `LLM_API_KEY` | `MODEL` | Also needed |
+|---|---|---|---|---|
+| OpenAI | `openai` | your OpenAI key | a model name, e.g. `gpt-4o-mini` | nothing |
+| Azure OpenAI | `azure` | your Azure key | your **deployment** name | `LLM_API_BASE` (your endpoint) |
+| Gemini | `gemini` | your Gemini key | e.g. `gemini-2.0-flash` | nothing |
+| Anthropic | `anthropic` | your Anthropic key | a model name | nothing |
+| Anything else LiteLLM supports | leave empty | that provider's key | the full LiteLLM id, e.g. `ollama/llama3` | `LLM_API_BASE` for a local server |
+
+Notes:
+
+- If `LLM_PROVIDER` is empty, it is `azure` when `LLM_API_BASE` is set and `openai` otherwise.
+- An older `.env` with `OPENAI_API_BASE`, `OPENAI_API_KEY` and `MODEL` still works, as Azure. `OPENAI_API_KEY` and `OPENAI_API_BASE` are accepted as older spellings of `LLM_API_KEY` and `LLM_API_BASE`.
+- `OPENAI_API_VERSION` only applies to Azure.
+- A `MODEL` that already contains a `/`, such as `gemini/gemini-2.0-flash`, is passed to LiteLLM as it is.
+- The provider code is one small file, `backend/app/llm.py`, and `backend/tests/test_llm.py` checks it without any network or key.
+- Scenarios that count tokens (context, compaction, caching) depend on what the provider reports. Cached-token numbers in particular differ between providers, and some report none.
+- I tested this playground with Azure OpenAI. The other providers are wired through LiteLLM and covered by unit tests of the request settings, but I have not run a full scenario on each.
 
 ## The screen
 

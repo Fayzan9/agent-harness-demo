@@ -18,7 +18,7 @@ class RunConfig(BaseModel):
     """Everything the UI can set before a run."""
 
     task: str = ""
-    model: str = ""  # Azure deployment name; empty means the MODEL env var
+    model: str = ""  # a model name for the chosen provider (Azure: a deployment name); empty means the MODEL env var
     tools: list[str] = []
     gates: dict[str, str] = {}  # tool name -> auto | ask | block (default: ask)
     hooks: list[HookSetting] = []  # run in this order

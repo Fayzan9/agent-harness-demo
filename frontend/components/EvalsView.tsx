@@ -195,7 +195,7 @@ export default function EvalsView({ onReplay }: Props) {
           )}
           <span className="text-sm text-mute">
             {chosen.size} {chosen.size === 1 ? "case" : "cases"} × {perCase} runs × {variants.length} {variants.length === 1 ? "setup" : "setups"} ={" "}
-            <span className="font-medium text-ink">{total} runs</span>, roughly {total * 3} model calls on your Azure quota
+            <span className="font-medium text-ink">{total} runs</span>, roughly {total * 3} model calls on your model quota
             {armed && total > BIG_RUN && ". That is a lot. Click again to confirm."}
           </span>
         </div>
